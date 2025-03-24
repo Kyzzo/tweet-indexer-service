@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/jeetdotso/tweet-indexer-service/proto";
+
+message TweetEvent {
+    string id = 1;
+    string text = 2;
+    string user_id = 3;
+    string tweet_type = 4;
+    string created_at = 5;
+    string conversation_id = 6;
+    string reply_to_id = 7;
+    string retweeted_by_id = 8;
+    repeated string media_attachments = 9;
+  }
