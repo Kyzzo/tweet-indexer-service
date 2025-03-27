@@ -2,21 +2,12 @@ package accounts_health
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	twitterAPI "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api"
 	"github.com/jeetdotso/tweet-indexer-service/util"
-)
-
-const (
-	SUSPENDED_GROUP         = 1
-	NOT_AUTHENTICATED_GROUP = 2
-	NOT_WORKING_GROUP       = 3
-	OTHER_GROUP             = 4
-	EMPTY_RAW               = 5
 )
 
 var (
@@ -40,45 +31,35 @@ func _check(ctx context.Context, i int, u dummyaccount.SelAccount, svc dummyacco
 	r, _ := client.Followers("180417061", "")
 	errCode := r.Get("errors.0.code").Int()
 	errMesg := r.Get("errors.0.message").String()
-	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	if r.Raw == "" {
-		fmt.Println("Error: ", errCode)
-	} else {
 
-		fmt.Println("Results: ", r)
-		fmt.Println("Error Code: ", errCode)
-		fmt.Println("Error Message: ", errMesg)
-	}
-	return
-	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	statsMutex.Lock()
 	totalCount++
 	if errCode == 64 || errMesg == "Your account is suspended and is not permitted to access this feature." {
 		suspendedCount++
 		statsMutex.Unlock()
 		logg.Log.Warn().Caller().Ctx(ctx).Str("username", u.UserName).Msg("Account suspended")
-		if err := svc.SwitchGroup(ctx, u.UserName, SUSPENDED_GROUP); err != nil {
+		if err := svc.SwitchGroup(ctx, u.UserName, dummyaccount.SUSPENDED_GROUP); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", u.UserName).Msg("Error moving account to suspended group.")
 		}
 	} else if errCode == 32 || errMesg == "Could not authenticate you" {
 		nonAuthenticatedCount++
 		statsMutex.Unlock()
 		logg.Log.Warn().Caller().Ctx(ctx).Str("username", u.UserName).Msg("Account not authenticated")
-		if err := svc.SwitchGroup(ctx, u.UserName, NOT_AUTHENTICATED_GROUP); err != nil {
+		if err := svc.SwitchGroup(ctx, u.UserName, dummyaccount.NOT_AUTHENTICATED_GROUP); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", u.UserName).Msg("Error moving account to not authenticated group.")
 		}
 	} else if errCode == 88 || errMesg == "Rate limit exceeded" {
 		notWorkingCount++
 		statsMutex.Unlock()
 		logg.Log.Warn().Caller().Ctx(ctx).Str("username", u.UserName).Msg("Account not working")
-		if err := svc.SwitchGroup(ctx, u.UserName, NOT_WORKING_GROUP); err != nil {
+		if err := svc.SwitchGroup(ctx, u.UserName, dummyaccount.NOT_WORKING_GROUP); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", u.UserName).Msg("Error moving account to not working group.")
 		}
 	} else if errMesg != "" {
 		OTHER_GROUPCount++
 		statsMutex.Unlock()
 		logg.Log.Warn().Caller().Ctx(ctx).Str("username", u.UserName).Str("message", errMesg).Msg("Account other")
-		if err := svc.SwitchGroup(ctx, u.UserName, OTHER_GROUP); err != nil {
+		if err := svc.SwitchGroup(ctx, u.UserName, dummyaccount.OTHER_GROUP); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", u.UserName).Msg("Error moving account to not working group.")
 		}
 
@@ -86,7 +67,7 @@ func _check(ctx context.Context, i int, u dummyaccount.SelAccount, svc dummyacco
 		emptyRawCount++
 		statsMutex.Unlock()
 		logg.Log.Warn().Caller().Ctx(ctx).Str("username", u.UserName).Msg("Account empty raw")
-		if err := svc.SwitchGroup(ctx, u.UserName, EMPTY_RAW); err != nil {
+		if err := svc.SwitchGroup(ctx, u.UserName, dummyaccount.EMPTY_RAW); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", u.UserName).Msg("Error moving account to not working group.")
 		}
 	} else {
@@ -96,10 +77,10 @@ func _check(ctx context.Context, i int, u dummyaccount.SelAccount, svc dummyacco
 	}
 }
 
-func Check(ctx context.Context, maxThreads int, svc dummyaccount.Service) {
+func Check(ctx context.Context, maxThreads int, svc dummyaccount.Service, group int) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxThreads)
-	selAccounts, err := svc.FindAllByGroup(ctx, 0)
+	selAccounts, err := svc.FindAllByGroup(ctx, group)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium accounts.")
 		return
@@ -118,8 +99,7 @@ func Check(ctx context.Context, maxThreads int, svc dummyaccount.Service) {
 	close(sem)
 
 	suspensionRate := float64(suspendedCount) / float64(totalCount)
-	fmt.Println("SUMMARY")
-	fmt.Println("---------------------------------------------")
+
 	logg.Log.Info().Caller().Ctx(ctx).Float64("suspense rate", suspensionRate*100).Msg("Suspension Rate")
 	logg.Log.Info().Caller().Ctx(ctx).Int("suspended accounts", suspendedCount).Msg("Suspended Accounts")
 	logg.Log.Info().Caller().Ctx(ctx).Int("non authenticated accounts", nonAuthenticatedCount).Msg("Non Authenticated Accounts")
@@ -129,7 +109,6 @@ func Check(ctx context.Context, maxThreads int, svc dummyaccount.Service) {
 	logg.Log.Info().Caller().Ctx(ctx).Int("working accounts", liveCount).Msg("Working Accounts")
 	logg.Log.Info().Caller().Ctx(ctx).Int("total accounts", totalCount).Msg("Total Accounts")
 	logg.Log.Info().Caller().Ctx(ctx).Msg("Check complete.")
-	fmt.Println("---------------------------------------------")
 	suspendedCount = 0
 	liveCount = 0
 	totalCount = 0
