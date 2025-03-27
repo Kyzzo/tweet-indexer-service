@@ -380,18 +380,18 @@ func (hlp *HelperDefaultImpl) Get2FAToken(wd selenium.WebDriver, secret string) 
 	}
 
 	secretInput.Clear()
-
 	// Find and input Token Period (90 seconds)
-	periodInput, err := wd.FindElement(selenium.ByCSSSelector, "input[placeholder='Usually 30']")
-	if err != nil {
-		return "", fmt.Errorf("failed to find token period input: %v", err)
-	}
-	periodInput.Clear()
-	err = periodInput.SendKeys("90")
-	if err != nil {
-		return "", fmt.Errorf("failed to enter token period: %v", err)
-	}
-	time.Sleep(4 * time.Second)
+	// periodInput, err := wd.FindElement(selenium.ByCSSSelector, "input[placeholder='Usually 30']")
+	// if err != nil {
+	// 	return "", fmt.Errorf("failed to find token period input: %v", err)
+	// }
+	// periodInput.Clear()
+	// err = periodInput.SendKeys("90")
+	// if err != nil {
+	// 	return "", fmt.Errorf("failed to enter token period: %v", err)
+	// }
+	time.Sleep(2 * time.Second)
+	secretInput.Clear()
 	err = secretInput.SendKeys(secret)
 	if err != nil {
 		return "", fmt.Errorf("failed to enter secret key: %v", err)
