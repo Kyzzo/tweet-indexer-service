@@ -46,7 +46,7 @@ type Stream struct {
 }
 
 type Kafka struct {
-	Brokers []string `mapstructure:"brokers"`
+	Brokers string `mapstructure:"brokers"`
 }
 type Services struct {
 	CoinGeckoServices  Service            `mapstructure:"coingeckoServices"`
