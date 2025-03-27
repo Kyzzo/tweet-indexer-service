@@ -29,11 +29,14 @@ import (
 
 const (
 	MAX_THREADS = 100
+	TOPIC_NAME  = "monitor"
 )
 
 var (
 	handleScrape   sync.Mutex
 	hanldeRollback sync.Mutex
+
+	TOPIC_CON = fmt.Sprintf("%s.%s", stream.StreamTweetPrefixTopic, TOPIC_NAME)
 )
 
 type TweetIndexer struct {
@@ -51,7 +54,7 @@ func NewTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn 
 	accSvc := user.NewTwitterUserService(grpcconn, cfg.Services)
 	dummSvc := dummyaccount.NewSeleniumService(conn, &cfg)
 	cycleSvc := cycle.NewCycleService(conn, &cfg)
-	producer := kafka.NewProducer(cfg.Stream, fmt.Sprintf("%s.%s", stream.StreamTweetPrefixTopic, "monitor"))
+	producer := kafka.NewProducer(cfg.Stream, TOPIC_CON)
 
 	return TweetIndexer{
 		tweetRepo:      tweetRepo,
@@ -130,6 +133,10 @@ func (ti *TweetIndexer) Start(ctx context.Context) {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to end cycle.")
 		}
 	}
+}
+
+func (ti TweetIndexer) TopicName() string {
+	return TOPIC_CON
 }
 
 func (ti TweetIndexer) Stop(ctx context.Context) {
