@@ -25,7 +25,7 @@ func (c *Producer) Connect(cfg config.Stream, topic string) {
 	logg.Log.Info().Msg(fmt.Sprintf("Connecting to kafka broker: %v", cfg.Kafka.Brokers))
 
 	w := kafka.Writer{
-		Addr:                   kafka.TCP(cfg.Kafka.Brokers...),
+		Addr:                   kafka.TCP(cfg.Kafka.Brokers),
 		Topic:                  topic,
 		BatchTimeout:           time.Millisecond * 1,
 		AllowAutoTopicCreation: true,
