@@ -76,7 +76,7 @@ func (api TweetAPI) streamTweet(ctx context.Context, tweet model.TweetEvent) {
 	}
 
 	// Produce message to Kafka
-	if err = api.producer.Produce(b); err != nil {
+	if err = api.producer.Produce([]byte(""), b); err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
 		return
 	}

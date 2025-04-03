@@ -28,8 +28,10 @@ import (
 )
 
 const (
-	MAX_THREADS = 100
-	TOPIC_NAME  = "monitor"
+	MAX_THREADS  = 100
+	TOPIC_NAME   = "monitor"
+	LIVE_KEY     = "live"     // used to indicate live scraping in the topic
+	ROLLBACK_KEY = "rollback" // used to indicate rollback scraping in the topic
 )
 
 var (
@@ -260,7 +262,7 @@ func (ti TweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet *twit
 		logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", tweetEvent.ID).Msg("Tweet event already exists.")
 		return
 	}
-	ti.streamTweet(ctx, tweetEvent)
+	ti.streamRollbackTweet(ctx, tweetEvent)
 
 	hanldeRollback.Lock()
 	defer hanldeRollback.Unlock()
@@ -287,7 +289,30 @@ func (ti TweetIndexer) streamTweet(ctx context.Context, tweetEvent model.TweetEv
 		return
 	}
 	// Produce message to Kafka
-	if err = ti.producer.Produce(b); err != nil {
+	if err = ti.producer.Produce([]byte(LIVE_KEY), b); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
+		return
+	}
+
+	logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", tweetEvent.ID).Msg("Tweet event sent!")
+
+}
+func (ti TweetIndexer) streamRollbackTweet(ctx context.Context, tweetEvent model.TweetEvent) {
+	_, err := ti.tweetRepo.SaveOrUpdate(ctx, tweetEvent)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to save tweet event.")
+		return
+	}
+	tweetProto := tweetEvent.ToProto()
+
+	// Marshal to binary format
+	b, err := proto.Marshal(tweetProto)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
+		return
+	}
+	// Produce message to Kafka
+	if err = ti.producer.Produce([]byte(ROLLBACK_KEY), b); err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
 		return
 	}
