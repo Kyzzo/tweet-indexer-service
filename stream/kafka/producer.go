@@ -34,7 +34,7 @@ func (c *Producer) Connect(cfg config.Stream, topic string) {
 	c.writer = w
 }
 
-func (c *Producer) Produce(msg []byte) error {
+func (c *Producer) Produce(key, msg []byte) error {
 	m := kafka.Message{
 		Value: msg,
 	}

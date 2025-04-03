@@ -1,5 +1,5 @@
 package stream
 
 type Producer interface {
-	Produce(msg []byte) error
+	Produce(key []byte, msg []byte) error
 }
