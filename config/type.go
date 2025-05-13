@@ -68,6 +68,7 @@ type Grpc struct {
 }
 type GrpcClients struct {
 	AccountableServices GrpcClient `mapstructure:"accountableServices"`
+	SaasServices        GrpcClient `mapstructure:"saasServices"`
 }
 type GrpcServer struct {
 	Port string `mapstructure:"port"`
