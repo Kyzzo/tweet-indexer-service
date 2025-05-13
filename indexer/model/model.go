@@ -10,8 +10,10 @@ import (
 type TweetEvent struct {
 	ID               string                 `bson:"_id"`
 	CreatedAt        time.Time              `bson:"created_at"`
+	CapturedAt       time.Time              `bson:"captured_at"`
 	Text             string                 `bson:"text"`
 	UserID           string                 `bson:"user_id"`
+	UserName         string                 `bson:"user_name"`
 	ConversationID   string                 `bson:"conversation_id"`
 	ReplyToID        string                 `bson:"reply_to_id"`
 	TweetType        twitterTypes.TweetType `bson:"tweet_type"`
@@ -26,12 +28,35 @@ type UserCheckPoint struct {
 	UpdatedAt          time.Time `bson:"updated_at"`
 }
 
+type GrokEvent struct {
+	ID              string    `bson:"_id"`
+	IsShill         bool      `bson:"is_shill"`
+	TokensMentioned []string  `bson:"tokens_mentioned"`
+	TokensShilled   []string  `bson:"tokens_shilled"`
+	UserId          string    `bson:"user_id"`
+	CreatedAt       time.Time `bson:"created_at"`
+	DummyAccount    string    `bson:"dummy_account"`
+}
+
+type RetweetEvent struct {
+	ID        string    `bson:"_id"`
+	CreatedAt time.Time `bson:"created_at"`
+	UserId    string    `bson:"user_id"`
+}
+
 func (te *TweetEvent) GetID() any {
 	return te.ID
 }
 
+func (rt *RetweetEvent) GetID() any {
+	return rt.ID
+}
+
 func (uch *UserCheckPoint) GetID() any {
 	return uch.ID
+}
+func (ge *GrokEvent) GetID() any {
+	return ge.ID
 }
 
 // ✅ Converts `TweetEvent` to `proto.TweetEvent`
@@ -53,4 +78,66 @@ func (te *TweetEvent) ToProto() *proto.TweetEvent {
 		RetweetedById:    te.RetweetedByID,
 		MediaAttachments: mediaAttachments,
 	}
+}
+
+func (ge *GrokEvent) ToProto() *proto.GrokEvent {
+	return &proto.GrokEvent{
+		Id:              ge.ID,
+		IsShill:         ge.IsShill,
+		TokensMentioned: ge.TokensMentioned,
+		TokensShilled:   ge.TokensShilled,
+		UserId:          ge.UserId,
+	}
+}
+
+type SaasEvent struct {
+	ID            string    `bson:"_id"`
+	Text          string    `bson:"text"`
+	UserId        string    `bson:"user_id"`
+	TweetType     string    `bson:"tweet_type"`
+	TokensShilled []string  `bson:"tokens_shilled"`
+	CreatedAt     time.Time `bson:"created_at"`
+}
+
+func (se *SaasEvent) ToProto() *proto.SaasEvent {
+	return &proto.SaasEvent{
+		Id:            se.ID,
+		Text:          se.Text,
+		UserId:        se.UserId,
+		TweetType:     se.TweetType,
+		TokensShilled: se.TokensShilled,
+		CreatedAt:     se.CreatedAt.Format(time.RFC3339),
+	}
+}
+
+func (tw *TweetEvent) GetMediaUrls() []string {
+	var urls []string
+
+	for _, raw := range tw.MediaAttachments {
+		// each attachment should be a map[string]interface{}
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// look at the “type” field
+		typ, _ := m["type"].(string)
+		switch typ {
+		case "photo":
+			if u, _ := m["media_url_https"].(string); u != "" {
+				urls = append(urls, u)
+			}
+		case "video":
+			if u, _ := m["expanded_url"].(string); u != "" {
+				urls = append(urls, u)
+			}
+		default:
+			if u, _ := m["expanded_url"].(string); u != "" {
+				urls = append(urls, u)
+			}
+		}
+
+	}
+
+	return urls
 }

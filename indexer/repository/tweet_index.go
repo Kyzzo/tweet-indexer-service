@@ -8,6 +8,7 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	"github.com/jeetdotso/tweet-indexer-service/persistence"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
+	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -20,7 +21,9 @@ type TweetEventRepository interface {
 	FindAllByUserId(ctx context.Context, userId string, idx int64) ([]model.TweetEvent, error)
 	FindAllByID(ctx context.Context, id string) (*model.TweetEvent, error)
 	FindAll(ctx context.Context, idx int64) ([]model.TweetEvent, error)
+	FindAllRaw(ctx context.Context) ([]model.TweetEvent, error)
 	FindMostRecentByUserId(ctx context.Context, userId string) (*model.TweetEvent, error)
+	FindAllNoneGrok(ctx context.Context) ([]model.TweetEvent, error)
 }
 type mongoEventRepository struct {
 	conn    *mongodb.MongoConnection
@@ -49,31 +52,15 @@ func (repo *mongoEventRepository) FindAllByID(ctx context.Context, id string) (*
 	}
 	return &index, nil
 }
-
 func (repo *mongoEventRepository) SaveOrUpdate(ctx context.Context, tweetIndex model.TweetEvent) (interface{}, error) {
-
-	b, err := bson.Marshal(tweetIndex)
-	if err != nil {
-		logg.Log.Error().Err(err).Msg("Error marshaling tweet index.")
-		return nil, err
-	}
-
-	var update bson.M
-	err = bson.Unmarshal(b, &update)
-	if err != nil {
-		logg.Log.Error().Err(err).Msg("Error unmarshalling tweet index to bson.M.")
-		return nil, err
-	}
-
 	filter := bson.M{"_id": tweetIndex.ID}
-	opts := options.UpdateOptions{}
-	opts.SetUpsert(true)
+	update := bson.M{"$set": tweetIndex}
+	opts := options.Update().SetUpsert(true)
 
 	collection := repo.conn.Datastore.Collection(tweetIndexCollection)
-
-	res, err := collection.UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: update}}, &opts)
+	res, err := collection.UpdateOne(ctx, filter, update, opts)
 	if err != nil {
-		logg.Log.Error().Err(err).Msg("Error updating/inserting block index.")
+		logg.Log.Error().Err(err).Msg("Error updating or inserting tweet index.")
 		return nil, err
 	}
 
@@ -134,6 +121,30 @@ func (repo *mongoEventRepository) FindAll(ctx context.Context, idx int64) ([]mod
 
 	return blockIdxs, nil
 }
+func (repo *mongoEventRepository) FindAllRaw(ctx context.Context) ([]model.TweetEvent, error) {
+	findOpt := options.Find()
+	findOpt.SetSort(bson.D{{"created_at", 1}})
+	filter := bson.D{{}}
+	var blockIdxs []model.TweetEvent
+
+	cursor, err := repo.conn.Datastore.Collection(tweetIndexCollection).Find(ctx, filter, findOpt)
+	if err != nil {
+		logg.Log.Error().Err(err).Msg("Error finding all block indexes.")
+		return nil, err
+	}
+
+	for cursor.Next(ctx) {
+		var blockIdx model.TweetEvent
+		err = cursor.Decode(&blockIdx)
+		if err != nil {
+			logg.Log.Error().Err(err).Msg("Error decoding block index.")
+			return nil, err
+		}
+		blockIdxs = append(blockIdxs, blockIdx)
+	}
+
+	return blockIdxs, nil
+}
 
 func (repo *mongoEventRepository) FindMostRecentByUserId(ctx context.Context, userId string) (*model.TweetEvent, error) {
 	filter := bson.M{"user_id": userId}
@@ -158,4 +169,43 @@ func (repo *mongoEventRepository) FindMostRecentByUserId(ctx context.Context, us
 	}
 
 	return &tweetIdx, nil
+}
+
+func (repo *mongoEventRepository) FindAllNoneGrok(ctx context.Context) ([]model.TweetEvent, error) {
+	pipeline := mongo.Pipeline{
+		// stage 1
+		bson.D{{
+			Key: "$match",
+			Value: bson.D{{
+				"tweet_type", bson.D{{
+					"$nin", bson.A{
+						twitterTypes.Retweet,
+						twitterTypes.QuoteRetweet,
+					},
+				}},
+			}},
+		}},
+		// stage 2
+		{{Key: "$lookup", Value: bson.D{
+			{"from", grokIndexCollection},
+			{"localField", "_id"},
+			{"foreignField", "_id"},
+			{"as", "grokMatch"},
+		}}},
+		// stage 3
+		{{Key: "$match", Value: bson.D{{"grokMatch.0", bson.D{{"$exists", false}}}}}},
+		// optional
+		{{"$sort", bson.D{{"captured_at", 1}}}},
+		{{Key: "$project", Value: bson.D{{"grokMatch", 0}}}},
+	}
+
+	cur, err := repo.conn.Datastore.Collection(tweetIndexCollection).Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	var misses []model.TweetEvent
+	if err := cur.All(ctx, &misses); err != nil {
+		return nil, err
+	}
+	return misses, nil
 }
