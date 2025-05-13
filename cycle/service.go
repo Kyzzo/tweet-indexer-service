@@ -14,7 +14,7 @@ type Service interface {
 	UpdateOrInsert(ctx context.Context, pl *ScrapeCycle) error
 	FindById(ctx context.Context, id primitive.ObjectID) (*ScrapeCycle, error)
 	FindLatest(ctx context.Context) (*ScrapeCycle, error)
-	CreateNewCycle(ct context.Context, totalUsers, removedUsers, newUsers int) error
+	CreateNewCycle(ctx context.Context, totalUsers, removedUsers, newUsers int, ct CycleType) error
 	AddRollback(ctx context.Context) error
 	AddScrapedTweets(ctx context.Context) error
 	EndCycle(ctx context.Context) error
@@ -62,12 +62,12 @@ func (s *ServiceDefaultImpl) FindLatest(ctx context.Context) (*ScrapeCycle, erro
 	return cycle, nil
 }
 
-func (s *ServiceDefaultImpl) CreateNewCycle(ct context.Context, totalUsers, removedUsers, newUsers int) error {
-	cycle := NewScrapeCycle()
+func (s *ServiceDefaultImpl) CreateNewCycle(ctx context.Context, totalUsers, removedUsers, newUsers int, ct CycleType) error {
+	cycle := NewScrapeCycle(ct)
 	cycle.TotalUsers = totalUsers
 	cycle.RemovedUsers = removedUsers
 	cycle.NewUsers = newUsers
-	err := s.UpdateOrInsert(context.Background(), cycle)
+	err := s.UpdateOrInsert(ctx, cycle)
 	if err != nil {
 		return err
 	}

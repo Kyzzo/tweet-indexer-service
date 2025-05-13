@@ -7,8 +7,9 @@ import (
 )
 
 type ScrapeCycle struct {
-	ID                 primitive.ObjectID     `bson:"_id,omitempty"`
+	ID                 primitive.ObjectID     `bson:"_id"`
 	StartTime          time.Time              `bson:"start_time"`
+	CycleType          string                 `bson:"cycle_type"`
 	EndTime            time.Time              `bson:"end_time"`
 	TotalUsers         int                    `bson:"total_users"`
 	NewUsers           int                    `bson:"new_users"`
@@ -16,13 +17,20 @@ type ScrapeCycle struct {
 	TweetsScraped      int                    `bson:"tweets_scraped"`
 	RollbacksTriggered int                    `bson:"rollbacks_triggered"`
 	Status             int                    `bson:"status"`
-	Metadata           map[string]interface{} `bson:"metadata,omitempty"`
+	Metadata           map[string]interface{} `bson:"metadata"`
 }
 
 const (
 	Running = iota
 	Completed
 	Failed
+)
+
+type CycleType string
+
+const (
+	KOL_INDEXER         CycleType = "kol_indexer"
+	TOKEN_GROUP_INDEXER CycleType = "token_group_indexer"
 )
 
 var StatusMap = map[int]string{
@@ -35,11 +43,12 @@ func (sc *ScrapeCycle) GetStatus() string {
 	return StatusMap[sc.Status]
 }
 
-func NewScrapeCycle() *ScrapeCycle {
+func NewScrapeCycle(ct CycleType) *ScrapeCycle {
 	return &ScrapeCycle{
 		ID:        primitive.NewObjectID(),
 		StartTime: time.Now(),
 		Status:    Running,
+		CycleType: string(ct),
 	}
 }
 
