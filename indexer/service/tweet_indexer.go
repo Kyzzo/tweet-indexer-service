@@ -9,7 +9,8 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/cache"
 	"github.com/jeetdotso/tweet-indexer-service/config"
 	"github.com/jeetdotso/tweet-indexer-service/connection/proto/grpcclient"
-	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser/user"
+	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser"
+	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser/saas"
 	"github.com/jeetdotso/tweet-indexer-service/cycle"
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/mapper"
@@ -28,7 +29,7 @@ import (
 )
 
 const (
-	MAX_THREADS  = 100
+	MAX_THREADS  = 20
 	TOPIC_NAME   = "monitor"
 	LIVE_KEY     = "live"     // used to indicate live scraping in the topic
 	ROLLBACK_KEY = "rollback" // used to indicate rollback scraping in the topic
@@ -46,14 +47,15 @@ type TweetIndexer struct {
 	cycleSvc       cycle.Service
 	checkpointRepo repository.UserCheckPointRepository
 	producer       stream.Producer
-	accSvc         user.TwitteruserService
+	saasSvc        saas.SassUserService
 	dummSvc        dummyaccount.Service
 }
 
 func NewTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap) TweetIndexer {
 	tweetRepo := repository.NewTweetIndexRepo(conn)
 	checkpointRepo := repository.NewUserCheckPointRepository(conn)
-	accSvc := user.NewTwitterUserService(grpcconn, cfg.Services)
+	// accSvc := user.NewTwitterUserService(grpcconn, cfg.Services)
+	saasCli := saas.NewSassUserService(grpcconn, cfg.Services)
 	dummSvc := dummyaccount.NewSeleniumService(conn, &cfg)
 	cycleSvc := cycle.NewCycleService(conn, &cfg)
 	producer := kafka.NewProducer(cfg.Stream, TOPIC_CON)
@@ -63,7 +65,7 @@ func NewTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn 
 		checkpointRepo: checkpointRepo,
 		producer:       producer,
 		cycleSvc:       cycleSvc,
-		accSvc:         accSvc,
+		saasSvc:        saasCli,
 		dummSvc:        dummSvc,
 	}
 }
@@ -71,11 +73,11 @@ func NewTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn 
 func (ti *TweetIndexer) Start(ctx context.Context) {
 	logg.Log.Info().Caller().Ctx(ctx).Msg("Starting tweet indexer service...")
 
-	trackedUsers := make(map[string]user.User) // Keeps track of monitored users
+	trackedUsers := make(map[string]twitteruser.User) // Keeps track of monitored users
 
 	for {
 
-		users, err := ti.accSvc.FindAllRawUsers(ctx)
+		users, err := ti.saasSvc.FindAllTracked(ctx)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
 			time.Sleep(30 * time.Second) // Retry after delay
@@ -83,9 +85,9 @@ func (ti *TweetIndexer) Start(ctx context.Context) {
 		}
 
 		// Track new users and remove old ones
-		newUsers := make(map[string]user.User)
+		newUsers := make(map[string]twitteruser.User)
 		newUsernames := []string{}
-		var newUsersArr []user.User
+		var newUsersArr []twitteruser.User
 		var deletedUsers int
 
 		for _, u := range users {
@@ -102,18 +104,23 @@ func (ti *TweetIndexer) Start(ctx context.Context) {
 		for id, u := range trackedUsers {
 			if _, exists := newUsers[id]; !exists {
 				logg.Log.Info().Caller().Ctx(ctx).Str("id", id).Msg("Removing user from tracking.")
-				cache.RemoveUserID(u.Handle) // You need to implement this function
+				cache.RemoveUserID(u.ID) // You need to implement this function
 				deletedUsers++
 				delete(trackedUsers, id)
 			}
 		}
 
+		trackedUsers = newUsers
+		err = ti.cycleSvc.CreateNewCycle(ctx, len(trackedUsers), deletedUsers, len(newUsernames), cycle.KOL_INDEXER)
+		if err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error creating new cycle.")
+		}
 		var wg sync.WaitGroup
 		// Sync only newly added users
 		if len(newUsernames) > 0 {
 			wg.Add(1)
 			ctl := util.CreateBackgroundContextFromExisting(ctx)
-			go func(ctx context.Context, newUsersArr []user.User) {
+			go func(ctx context.Context, newUsersArr []twitteruser.User) {
 				err = ti.Sync(ctx, newUsersArr)
 				if err != nil {
 					logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error syncing tweets.")
@@ -122,11 +129,6 @@ func (ti *TweetIndexer) Start(ctx context.Context) {
 		}
 
 		// Update trackedUsers to reflect the latest state
-		trackedUsers = newUsers
-		err = ti.cycleSvc.CreateNewCycle(ctx, len(trackedUsers), deletedUsers, len(newUsernames))
-		if err != nil {
-			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error creating new cycle.")
-		}
 		logg.Log.Info().Caller().Ctx(ctx).Msg("Monitoring users for new tweets...")
 		track.MonitorTweetsMultipleAccounts(ctx, newUsernames, MAX_THREADS, ti.dummSvc, ti.HandleTweetEvent)
 
@@ -150,7 +152,7 @@ func (ti TweetIndexer) Stop(ctx context.Context) {
 
 // TODO: wait until utilized then return so scrape can continue
 // ✅ **Sync tweets for a list of users**
-func (ti TweetIndexer) Sync(ctx context.Context, users []user.User) error {
+func (ti TweetIndexer) Sync(ctx context.Context, users []twitteruser.User) error {
 	userToSync := make(map[string]time.Time)
 	for _, user := range users {
 		userCheckpoint := ti.syncLatestToCheckPoint(ctx, user)
@@ -164,7 +166,7 @@ func (ti TweetIndexer) Sync(ctx context.Context, users []user.User) error {
 	return nil
 }
 
-func addUsers(ctx context.Context, users []user.User) []string {
+func addUsers(ctx context.Context, users []twitteruser.User) []string {
 	//add to cache
 	userHandles := make([]string, len(users))
 	for _, user := range users {
@@ -175,7 +177,7 @@ func addUsers(ctx context.Context, users []user.User) []string {
 	return userHandles
 }
 
-func (ti TweetIndexer) syncLatestToCheckPoint(ctx context.Context, user user.User) time.Time {
+func (ti TweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twitteruser.User) time.Time {
 	twt, err := ti.tweetRepo.FindMostRecentByUserId(ctx, user.ID)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching user checkpoint")
@@ -205,13 +207,13 @@ func (ti TweetIndexer) syncLatestToCheckPoint(ctx context.Context, user user.Use
 }
 
 // ✅ **Handler for new tweets (passed as a callback)**
-func (ti TweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitterTypes.TweetInfo) {
+func (ti TweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitterTypes.TweetInfo, username string) {
 	if tweet == nil {
 		logg.Log.Error().Msg("HandleTweetEvent received a nil tweet")
 		return
 	}
 
-	tweetEvent := mapper.MapTweetToEvent(tweet)
+	tweetEvent := mapper.MapTweetToEvent(tweet, username)
 	//Check if tweet already exists
 	exist, err := ti.tweetRepo.FindAllByID(ctx, tweetEvent.ID)
 	if err != nil {
@@ -245,13 +247,13 @@ func (ti TweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitterTypes
 	}
 }
 
-func (ti TweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet *twitterTypes.TweetInfo) {
+func (ti TweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet *twitterTypes.TweetInfo, username string) {
 	if tweet == nil {
 		logg.Log.Error().Msg("HandleTweetEvent received a nil tweet")
 		return
 	}
 
-	tweetEvent := mapper.MapTweetToEvent(tweet)
+	tweetEvent := mapper.MapTweetToEvent(tweet, username)
 	//Check if tweet already exists
 	exist, err := ti.tweetRepo.FindAllByID(ctx, tweetEvent.ID)
 	if err != nil {
