@@ -18,6 +18,8 @@ import (
 
 type TweetsRollBack struct {
 	twitterAPI *twitterAPI.TwitterClient
+	svc        dummyaccount.Service
+	selAccount *dummyaccount.SelAccount
 	maxRetries int
 	retryDelay time.Duration
 }
@@ -37,6 +39,8 @@ func NewTweetsRollBack(ctx context.Context, maxRetries int, retryDelay time.Dura
 		twitterAPI: twitterAPIClient,
 		maxRetries: maxRetries,
 		retryDelay: retryDelay,
+		svc:        svc,
+		selAccount: selAccount,
 	}
 
 	return tr, selAccount, nil
@@ -58,7 +62,7 @@ func (trb *TweetsRollBack) fetchTweetsWithRetry(ctx context.Context, userID stri
 	return nil, fmt.Errorf("failed to fetch tweets after %d attempts", trb.maxRetries)
 }
 
-func (trb *TweetsRollBack) Tweets(ctx context.Context, username string, targetDate time.Time) (*[]twitterTypes.TweetInfo, error) {
+func (trb *TweetsRollBack) Tweets(ctx context.Context, username string, targetDate time.Time) ([]*twitterTypes.TweetInfo, error) {
 	if username == "" {
 		return nil, fmt.Errorf("username and targetDate are required")
 	}
@@ -77,40 +81,275 @@ func (trb *TweetsRollBack) Tweets(ctx context.Context, username string, targetDa
 	return tweets, nil
 }
 
-func TweetsMultithreaded(ctx context.Context, users map[string]time.Time, threadsNum int, maxRetries int, retryDelay time.Duration, svc dummyaccount.Service, handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo)) {
-
+func TweetsMultithreaded(
+	ctx context.Context,
+	users map[string]time.Time,
+	threadsNum int,
+	maxRetries int,
+	retryDelay time.Duration,
+	svc dummyaccount.Service,
+	handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo, username string),
+) {
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, threadsNum)
-
+	sem := make(chan struct{}, min(threadsNum, len(users)))
+	var countLock sync.Mutex
+	var count int
 	for username, date := range users {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(username string, date time.Time) {
+			// 1) Always defer the wg.Done() and sem release
 			defer wg.Done()
 			defer func() { <-sem }()
-			trb, selAcc, err := NewTweetsRollBack(ctx, maxRetries, retryDelay, svc) //avoid rate limiting by creating new client for each user
+
+			// 2) Now create your RollBack client and get the selAcc
+			trb, selAcc, err := NewTweetsRollBack(ctx, maxRetries, retryDelay, svc)
 			if err != nil {
-				logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", username).Msg("Error creating TweetsRollBack")
+				logg.Log.
+					Error().
+					Caller().
+					Ctx(ctx).
+					Err(err).
+					Str("username", username).
+					Msg("Error creating TweetsRollBack")
 				return
 			}
+
+			// 3) Only after you have selAcc, defer its logout
 			defer func() {
-				_ = svc.LogOut(ctx, selAcc.UserName)
+				if err := svc.LogOut(ctx, selAcc.UserName); err != nil {
+					logg.Log.
+						Error().
+						Caller().
+						Ctx(ctx).
+						Err(err).
+						Str("username", selAcc.UserName).
+						Msg("Error logging out selenium account")
+				}
 			}()
+			// 4) Now do your work
 			tweets, err := trb.Tweets(ctx, username, date)
 			if err != nil {
-				logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", username).Msg("Error rollback tweets for user")
+				logg.Log.
+					Error().
+					Caller().
+					Ctx(ctx).
+					Err(err).
+					Str("username", username).
+					Msg("Error rolling back tweets for user")
 				return
 			}
-			for _, tweet := range *tweets {
-				handleTweet(ctx, &tweet)
+			if len(tweets) == 0 {
+				return
 			}
+			for _, tweet := range tweets {
+				handleTweet(ctx, tweet, username)
+			}
+			countLock.Lock()
+			defer countLock.Unlock()
+			count++
+			fmt.Println("Tweets completed for: ", count, " users")
+
 		}(username, date)
+
 	}
 	wg.Wait()
 }
 
-func (trb *TweetsRollBack) collectTweets(ctx context.Context, username, UserID string, limitDate time.Time) (*[]twitterTypes.TweetInfo, error) {
-	var tweets []twitterTypes.TweetInfo
+func (trb *TweetsRollBack) fetchTweetWithRotation(
+	ctx context.Context,
+	statusID, username string,
+) (*gjson.Result, error) {
+	var lastErr error
+
+	// We will re‐use this account until it fails, then swap it out:
+	for attempt := 0; attempt <= trb.maxRetries; attempt++ {
+		if res, err := trb.twitterAPI.GetTweet(statusID, username); err == nil {
+			return res, nil
+		} else {
+
+			lastErr = err
+		}
+		logg.Log.
+			Warn().
+			Caller().
+			Ctx(ctx).
+			Err(lastErr).
+			Str("statusID", statusID).
+			Str("account", trb.selAccount.UserName).
+			Int("attempt", attempt).
+			Msg("GetTweet failed — rotating account")
+
+		err := trb.SwitchAccounts(ctx)
+		if err != nil {
+			logg.Log.
+				Error().
+				Caller().
+				Ctx(ctx).
+				Err(err).
+				Str("username", username).
+				Str("statusID", statusID).
+				Msg("Error switching accounts")
+			return nil, err
+		}
+
+		// 5) (optional) back off before retrying
+		time.Sleep(trb.retryDelay)
+	}
+
+	return nil, fmt.Errorf(
+		"after %d attempts, failed to fetch tweet %s: last error: %w",
+		trb.maxRetries+1, statusID, lastErr,
+	)
+}
+
+func (trb *TweetsRollBack) processTweetEntries(
+	ctx context.Context,
+	username, trackedUser string,
+	tweets *[]*twitterTypes.TweetInfo,
+	entries []gjson.Result,
+	limitDate time.Time,
+) bool {
+	var times []time.Time
+	for _, entry := range entries {
+		statusID := trb.extractStatusID(entry)
+		if statusID == "" {
+			continue
+		}
+		et := entry.Get("content.entryType").String()
+		switch et {
+		case "TimelineTimelineItem":
+			if ti := tweetParsers.ParseTweetFromEntry(&entry, trackedUser); ti != nil {
+				var ts time.Time
+				ts, err := time.Parse(time.RubyDate, ti.CreatedAt)
+				if err != nil {
+					logg.Log.Error().
+						Caller().
+						Ctx(ctx).
+						Err(err).
+						Str("statusID", statusID).
+						Msg("Error parsing tweet date")
+					ts = time.Time{}
+				}
+				times = append(times, ts)
+				if limitDate.After(ts) {
+					continue
+				}
+
+				*tweets = append(*tweets, ti)
+			} else {
+				logg.Log.Error().
+					Caller().
+					Ctx(ctx).
+					Str("statusID", statusID).
+					Msg("Parsed tweet is nil")
+				continue
+			}
+		case "TimelineTimelineModule":
+			for _, mod := range entry.Get("content.items").Array() {
+				item := mod.Get("item")
+				if ti := tweetParsers.ParseTweetFromEntry(&item, trackedUser); ti != nil {
+
+					if ti == nil {
+						logg.Log.Error().
+							Caller().
+							Ctx(ctx).
+							Str("statusID", statusID).
+							Msg("Parsed tweet is nil")
+						continue
+					}
+					var ts time.Time
+					ts, err := time.Parse(time.RubyDate, ti.CreatedAt)
+					if err != nil {
+						logg.Log.Error().
+							Caller().
+							Ctx(ctx).
+							Err(err).
+							Str("statusID", statusID).
+							Msg("Error parsing tweet date")
+						ts = time.Time{}
+					}
+
+					times = append(times, ts)
+					if limitDate.After(ts) {
+						continue
+					}
+					*tweets = append(*tweets, ti)
+				} else {
+					logg.Log.Error().
+						Caller().
+						Ctx(ctx).
+						Str("statusID", statusID).
+						Msg("Parsed tweet is nil")
+					continue
+				}
+			}
+		default:
+			fmt.Println("Unknown entry: ", entry)
+			fmt.Println("Unknown entry type: ", et)
+
+		}
+
+	}
+	for _, t := range times {
+		if limitDate.After(t) {
+			return true
+		}
+	}
+	return false
+}
+
+func (trb *TweetsRollBack) ProcessTweetEntries(
+	ctx context.Context,
+	username, trackedUser string,
+	tweets *[]*twitterTypes.TweetInfo,
+	statusID string,
+	limitDate time.Time,
+) bool {
+
+	// <-- use our new helper instead of calling GetTweet directly
+	statusR, err := trb.fetchTweetWithRotation(ctx, statusID, username)
+	if err != nil {
+		logg.Log.Error().
+			Caller().
+			Ctx(ctx).
+			Err(err).
+			Str("username", username).
+			Str("statusID", statusID).
+			Msg("Skipping tweet after fetch/rotation failures")
+		return false
+	}
+
+	parsed := tweetParsers.ParseTweet(statusR, statusID, username)
+	var ts time.Time
+	if parsed == nil {
+		logg.Log.Error().
+			Caller().
+			Ctx(ctx).
+			Str("statusID", statusID).
+			Msg("Parsed tweet is nil")
+		return false
+	}
+	ts, err = time.Parse(time.RubyDate, parsed.CreatedAt)
+	if err != nil {
+		logg.Log.Error().
+			Caller().
+			Ctx(ctx).
+			Err(err).
+			Str("statusID", statusID).
+			Msg("Error parsing tweet date")
+		ts = time.Time{}
+	}
+
+	if limitDate.After(ts) {
+		return false
+	}
+	// *tweets = append(*tweets, parsed)
+
+	return true
+}
+func (trb *TweetsRollBack) collectTweets(ctx context.Context, username, UserID string, limitDate time.Time) ([]*twitterTypes.TweetInfo, error) {
+	var tweets []*twitterTypes.TweetInfo
 	cursor := ""
 	dateReached := false
 
@@ -118,7 +357,7 @@ func (trb *TweetsRollBack) collectTweets(ctx context.Context, username, UserID s
 		r, err := trb.fetchTweetsWithRetry(ctx, UserID, cursor)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", username).Msg("Error fetching tweets")
-			return &tweets, err
+			return tweets, err
 		}
 
 		instructions := r.Get("data.user.result.timeline_v2.timeline.instructions").Array()
@@ -132,57 +371,74 @@ func (trb *TweetsRollBack) collectTweets(ctx context.Context, username, UserID s
 			break
 		}
 
-		if dateReached = trb.processTweetEntries(ctx, username, &tweets, entries, limitDate); dateReached {
+		if dateReached = trb.processTweetEntries(ctx, username, UserID, &tweets, entries, limitDate); dateReached {
+			logg.Log.Info().Caller().Ctx(ctx).Str("username", username).Bool("is_dateReached", dateReached).Msg("Reached end condition")
 			break
 		}
 
-		newCursor := entries[len(entries)-2].Get("content.value").String()
+		newCursor := entries[len(entries)-1].Get("content.value").String()
 		if !trb.isValidCursor(newCursor) || len(entries) == 2 {
-			logg.Log.Info().Caller().Ctx(ctx).Str("username", username).Str("cursor", newCursor).Bool("dateReached", dateReached).Msg("Reached end condition")
+			logg.Log.Info().Caller().Ctx(ctx).Str("username", username).Str("cursor", newCursor).Bool("is_dateReached", dateReached).Msg("Reached end condition")
 			break
 		}
 		cursor = newCursor
 	}
 
-	return &tweets, nil
-}
-
-func (trb *TweetsRollBack) processTweetEntries(ctx context.Context, username string, tweets *[]twitterTypes.TweetInfo, entries []gjson.Result, limitDate time.Time) bool {
-	for _, entry := range entries {
-		statusID := trb.extractStatusID(entry)
-		if statusID == "" {
-			continue
-		}
-
-		statusrR, err := trb.twitterAPI.GetTweet(statusID)
-		if err != nil {
-			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", username).Str("statusID", statusID).Msg("Error fetching tweet")
-			continue
-		}
-
-		statusParsed := tweetParsers.ParseTweet(statusrR, statusID)
-		tweetTime, err := time.Parse("Mon Jan 02 15:04:05 -0700 2006", statusParsed.CreatedAt)
-		if err != nil {
-			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", username).Str("statusID", statusID).Msg("Error parsing tweet date")
-			continue
-		}
-
-		if limitDate.After(tweetTime) {
-			return true
-		}
-		*tweets = append(*tweets, *statusParsed)
-	}
-	return false
+	return tweets, nil
 }
 
 func (trb *TweetsRollBack) extractStatusID(entry gjson.Result) string {
-	statusID := entry.Get("content.itemContent.tweet_results.result.rest_id").String()
-	if statusID == "" {
-		statusID = entry.Get("content.items.0.item.itemContent.tweet_results.result.rest_id").String()
+	// 1) the normal path
+	if id := entry.Get("content.itemContent.tweet_results.result.rest_id"); id.Exists() {
+		return id.String()
 	}
-	return statusID
+	// 2) module-wrapper: first child
+	if id := entry.Get("content.items.0.item.itemContent.tweet_results.result.rest_id"); id.Exists() {
+		return id.String()
+	}
+	// 3) passed the `item` itself
+	if id := entry.Get("itemContent.tweet_results.result.rest_id"); id.Exists() {
+		return id.String()
+	}
+	// 4) TweetWithVisibilityResults path
+	if id := entry.Get("content.itemContent.tweet_results.result.tweet.rest_id"); id.Exists() {
+		return id.String()
+	}
+	// and likewise in the module-wrapper context:
+	if id := entry.Get("content.items.0.item.itemContent.tweet_results.result.tweet.rest_id"); id.Exists() {
+		return id.String()
+	}
+	return ""
 }
 
 func (trb *TweetsRollBack) isValidCursor(cursor string) bool {
 	return cursor != "" && cursor[0:2] != "0|"
+}
+
+func (trb *TweetsRollBack) SwitchAccounts(ctx context.Context) error {
+	svc := trb.svc
+	if err := trb.svc.LogOut(ctx, trb.selAccount.UserName); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", trb.selAccount.UserName).Msg("Error logging out Selenium account")
+		return err
+	}
+	selAcc, err := trb.svc.LogInToNext(ctx)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error logging in to next Selenium account")
+		return err
+	}
+
+	twitterAPIClient, err := twitterAPI.CreateTwitterClientWithCookies(selAcc.GetCookiesHttp())
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error creating Twitter client.")
+		selErr := trb.svc.LogOut(ctx, selAcc.UserName)
+
+		if selErr != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(selErr).Msg("Error logging out Selenium account")
+		}
+		return err
+	}
+	trb.svc = svc
+	trb.selAccount = selAcc
+	trb.twitterAPI = twitterAPIClient
+	return nil
 }

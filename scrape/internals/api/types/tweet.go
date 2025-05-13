@@ -3,11 +3,12 @@ package twitterTypes
 type TweetType string
 
 const (
-	Quote   TweetType = "Quote"
-	Thread  TweetType = "Thread"
-	Reply   TweetType = "Reply"
-	Tweet   TweetType = "Tweet"
-	Retweet TweetType = "Retweet"
+	Quote        TweetType = "Quote"
+	Thread       TweetType = "Thread"
+	Reply        TweetType = "Reply"
+	Tweet        TweetType = "Tweet"
+	Retweet      TweetType = "Retweet"
+	QuoteRetweet TweetType = "QuoteRetweet"
 )
 
 type TweetInfo struct {

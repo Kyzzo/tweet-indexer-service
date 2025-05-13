@@ -28,7 +28,7 @@ func _check(ctx context.Context, i int, u dummyaccount.SelAccount, svc dummyacco
 			Cookies: u.GetCookiesHttp(),
 		},
 	)
-	r, _ := client.Followers("180417061", "")
+	r, _ := client.Following("180417061", "")
 	errCode := r.Get("errors.0.code").Int()
 	errMesg := r.Get("errors.0.message").String()
 
@@ -74,6 +74,9 @@ func _check(ctx context.Context, i int, u dummyaccount.SelAccount, svc dummyacco
 		liveCount++
 		statsMutex.Unlock()
 		logg.Log.Info().Caller().Ctx(ctx).Str("username", u.UserName).Msg("Account live")
+		if err := svc.SwitchGroup(ctx, u.UserName, dummyaccount.WORKING_GROUP); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", u.UserName).Msg("Error moving account to not working group.")
+		}
 	}
 }
 
