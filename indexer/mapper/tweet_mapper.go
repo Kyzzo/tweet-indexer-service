@@ -8,23 +8,28 @@ import (
 )
 
 // ✅ Convert Twitter API response to TweetEvent
-func MapTweetToEvent(tweet *twitterTypes.TweetInfo) model.TweetEvent {
+func MapTweetToEvent(tweet *twitterTypes.TweetInfo, username string) model.TweetEvent {
 	return model.TweetEvent{
 		ID:               tweet.ID,
 		UserID:           tweet.UserID,
 		TweetType:        tweet.TweetType,
+		UserName:         username,
 		CreatedAt:        parseTime(tweet.CreatedAt),
 		ConversationID:   tweet.ConversationID,
 		ReplyToID:        tweet.ReplyToID,
 		Text:             tweet.Text,
 		RetweetedByID:    tweet.RetweetedByID,
+		CapturedAt:       time.Now(),
 		MediaAttachments: flattenAttachments(tweet.MediaAttachments),
 	}
 }
 
 // Helper function to parse time safely
 func parseTime(ts string) time.Time {
-	t, _ := time.Parse(time.RFC1123, ts)
+	t, err := time.Parse("Mon Jan 02 15:04:05 -0700 2006", ts)
+	if err != nil {
+		return time.Time{}
+	}
 	return t
 }
 
