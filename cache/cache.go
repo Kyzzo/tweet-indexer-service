@@ -44,6 +44,6 @@ func UpdateUserID(username, userID string) {
 	userIDsCache[username] = userID
 }
 
-func RemoveUserID(username string) {
-	delete(userIDsCache, username)
+func RemoveUserID(userId string) {
+	delete(userIDsCache, userId)
 }
