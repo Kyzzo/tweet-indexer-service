@@ -1,4 +1,4 @@
-package user
+package twitteruser
 
 import (
 	"time"
