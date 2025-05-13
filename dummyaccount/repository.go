@@ -18,6 +18,7 @@ type Repository interface {
 	UpdateOrInsert(ctx context.Context, pl *SelAccount) error
 	FindById(ctx context.Context, id string) (*SelAccount, error)
 	FindNext(ctx context.Context) (*SelAccount, error)
+	FindNextByGroup(ctx context.Context, group int) (*SelAccount, error)
 	FindInUse(ctx context.Context, group int) (*SelAccount, error)
 	FindGroupNumber(ctx context.Context) (int, error)
 	ResetAll(ctx context.Context) error
@@ -64,6 +65,26 @@ func (repo *MongoRepository) FindNext(ctx context.Context) (*SelAccount, error) 
 	filter := bson.M{
 		"in_use": false,
 		"group":  bson.M{"$in": bson.A{0}},
+	}
+
+	opts := options.FindOne().SetSort(bson.M{"updated_at": 1})
+
+	var account SelAccount
+	err := repo.conn.Datastore.Collection(repo.absrepo.Collection).FindOne(ctx, filter, opts).Decode(&account)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &account, nil
+}
+func (repo *MongoRepository) FindNextByGroup(ctx context.Context, group int) (*SelAccount, error) {
+	// find next (last updated account) in group 0
+	filter := bson.M{
+		"in_use": false,
+		"group":  bson.M{"$in": bson.A{group}},
 	}
 
 	opts := options.FindOne().SetSort(bson.M{"updated_at": 1})

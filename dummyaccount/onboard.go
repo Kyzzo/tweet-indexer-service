@@ -17,6 +17,13 @@ type OnboardDefaultImpl struct {
 	svc  Service
 }
 
+func NewOnboardDefaultImpl(hlp Helper, repo Repository, svc Service) *OnboardDefaultImpl {
+	return &OnboardDefaultImpl{
+		hlp:  hlp,
+		repo: repo,
+		svc:  svc,
+	}
+}
 func (s *OnboardDefaultImpl) Run(ctx context.Context) {
 
 	auth, err := s.svc.FindAllByGroup(ctx, NEW_GROUP)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"net/url"
 	"strings"
 	"time"
 
@@ -16,8 +15,6 @@ import (
 )
 
 type Helper interface {
-	GenerateTwitterSearchURL(handle string, startTimestamp, endTimestamp time.Time) string
-	// ParseTweet(html, userName, userTweetId string) ([]scrapedtweets.Tweet, error)
 	CheckSignUpElement(wd selenium.WebDriver) (bool, error)
 	GetRandomSleepTime() int
 	CheckRetryButton(wd selenium.WebDriver) bool
@@ -39,20 +36,6 @@ type HelperDefaultImpl struct {
 
 func NewSeleniumHelper() Helper {
 	return &HelperDefaultImpl{}
-}
-
-func (hlp *HelperDefaultImpl) GenerateTwitterSearchURL(handle string, startTimestamp, endTimestamp time.Time) string {
-	startStr := startTimestamp.Format("2006-01-02")
-	endStr := endTimestamp.Format("2006-01-02")
-
-	baseURL := "https://x.com/search?"
-
-	queryParams := url.Values{}
-	queryParams.Set("q", fmt.Sprintf("(from:%s) until:%s since:%s", handle, endStr, startStr))
-	queryParams.Set("src", "typed_query")
-	queryParams.Set("f", "live")
-
-	return baseURL + queryParams.Encode()
 }
 
 func (hlp *HelperDefaultImpl) CheckSignUpElement(wd selenium.WebDriver) (bool, error) {

@@ -16,11 +16,9 @@ type Service interface {
 	JustAddCookies(ctx context.Context, username string, cookies []selenium.Cookie) error
 	FindInUse(ctx context.Context, group int) (*SelAccount, error)
 	RemoveCookies(ctx context.Context, username string) error
-	SwitchAccounts(ctx context.Context, userName string) (*SelAccount, error)
-	Increment(ctx context.Context, num int, userName string) error
 	FindGroups(ctx context.Context) (int, error)
-	TurnOffAccount(ctx context.Context, username string) error
 	LogInToNext(ctx context.Context) (*SelAccount, error)
+	LogInToNextGroup(ctx context.Context, group int) (*SelAccount, error)
 	LogOut(ctx context.Context, userName string) error
 	SwitchGroup(ctx context.Context, username string, group int) error
 	FindByUsername(ctx context.Context, username string) (*SelAccount, error)
@@ -32,7 +30,8 @@ type Service interface {
 }
 
 var (
-	nextMu sync.Mutex
+	nextMu      sync.Mutex
+	nextGroupMu sync.Mutex
 )
 
 type ServiceDefaultImpl struct {
@@ -138,20 +137,6 @@ func (s *ServiceDefaultImpl) NewTwoFaAccount(ctx context.Context, username, pass
 	return nil
 }
 
-func (s *ServiceDefaultImpl) SwitchAccounts(ctx context.Context, userName string) (*SelAccount, error) {
-	// Switching accounts
-	//get in use first
-	err := s.LogOut(ctx, userName)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error logging out.")
-		return nil, err
-	}
-	time.Sleep(time.Duration(s.hlp.GetRandomSleepTime()) * time.Second)
-	// Getting next
-	return s.LogInToNext(ctx)
-
-}
-
 func (s *ServiceDefaultImpl) LogInToNext(ctx context.Context) (*SelAccount, error) {
 
 	nextMu.Lock()
@@ -179,31 +164,39 @@ func (s *ServiceDefaultImpl) LogInToNext(ctx context.Context) (*SelAccount, erro
 	}
 	nextMu.Unlock()
 
-	if !sl.LoggInGood() {
-		wd, err := s.hlp.LoadWebDriverNoCookies()
-		if err != nil {
-			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error logging in with selenium account.")
-			return nil, err
-		}
-		defer wd.Quit()
-		cookies, err := s.hlp.LogInAndGetCookies(ctx, sl.UserName, sl.Password, wd)
-		if err != nil {
-			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error logging in with selenium account.")
-		} else {
+	timeToWait := lastUpdated.Add(1 * time.Minute)
 
-			sl.AddSeleniumCookies(cookies)
-		}
-	} else {
-		fifteenMinutesAgo := lastUpdated.Add(14 * time.Minute)
+	// Calculate the remaining duration to wait
+	remainingTime := time.Until(timeToWait)
 
-		// Calculate the remaining duration to wait
-		remainingTime := time.Until(fifteenMinutesAgo)
+	// If there's still time to wait, sleep for the remaining duration
+	if remainingTime > 0 {
+		time.Sleep(remainingTime)
+	}
 
-		// If there's still time to wait, sleep for the remaining duration
-		if remainingTime > 0 {
-			remainingTime += (1 * time.Minute)
-			time.Sleep(remainingTime)
-		}
+	return sl, nil
+}
+func (s *ServiceDefaultImpl) LogInToNextGroup(ctx context.Context, group int) (*SelAccount, error) {
+
+	nextGroupMu.Lock()
+	defer nextGroupMu.Unlock()
+	// Getting next
+	sl, err := s.repo.FindNextByGroup(ctx, group)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding next selenium account.")
+		return nil, err
+	}
+	if sl == nil {
+		return nil, errEmptyAccount
+	}
+	sl.InUse = true
+	sl.UpdatedAt = time.Now()
+	sl.LastLoggedIn = time.Now()
+
+	err = s.repo.UpdateOrInsert(ctx, sl)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating selenium account.")
+		return nil, err
 	}
 
 	return sl, nil
@@ -233,24 +226,6 @@ func (s *ServiceDefaultImpl) LogOut(ctx context.Context, userName string) error 
 	return nil
 }
 
-func (svc *ServiceDefaultImpl) Increment(ctx context.Context, num int, userName string) error {
-	sl, err := svc.repo.FindById(ctx, userName)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error getting in use.")
-		return err
-	}
-	if sl == nil {
-		return nil
-	}
-	sl.AddIncrement(num)
-	err = svc.repo.UpdateOrInsert(ctx, sl)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating selenium account.")
-		return err
-	}
-	return nil
-}
-
 func (svc *ServiceDefaultImpl) FindGroups(ctx context.Context) (int, error) {
 	groups, err := svc.repo.FindGroupNumber(ctx)
 	if err != nil {
@@ -260,20 +235,6 @@ func (svc *ServiceDefaultImpl) FindGroups(ctx context.Context) (int, error) {
 	return groups, nil
 }
 
-func (svc *ServiceDefaultImpl) TurnOffAccount(ctx context.Context, username string) error {
-	sel, err := svc.repo.FindById(ctx, username)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding sel account.")
-		return err
-	}
-	sel.InUse = false
-	err = svc.repo.UpdateOrInsert(ctx, sel)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating sel.")
-		return err
-	}
-	return nil
-}
 func (svc *ServiceDefaultImpl) SwitchGroup(ctx context.Context, username string, group int) error {
 	sel, err := svc.repo.FindById(ctx, username)
 	if err != nil {
