@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/jeetdotso/tweet-indexer-service/proto";
+
+message SaasEvent {
+    string id = 1;
+    string text = 2;
+    string user_id = 3;
+    string tweet_type = 4;
+    string created_at = 5;
+    repeated string TokensShilled = 6;
+  }

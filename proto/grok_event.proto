@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/jeetdotso/tweet-indexer-service/proto";
+
+message GrokEvent {
+    string id = 1;
+    bool is_shill = 2;
+    repeated string TokensMentioned = 3;
+    repeated string TokensShilled = 4;
+    string user_id = 5;
+
+  }
