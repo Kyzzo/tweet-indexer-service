@@ -70,11 +70,11 @@ spec:
             httpGet:
               path: {{ .Values.healthCheckPath }}
               port: {{ .Values.port }}
-                readinessProbe:
-                initialDelaySeconds: 3
-                timeoutSeconds: 1
-                periodSeconds: 10
-                failureThreshold: 3
+            readinessProbe:
+            initialDelaySeconds: 3
+            timeoutSeconds: 1
+            periodSeconds: 10
+            failureThreshold: 3
   strategy:
     type: RollingUpdate
     rollingUpdate:
