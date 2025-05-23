@@ -7,28 +7,41 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jeetdotso/tweet-indexer-service/config"
 	"github.com/jeetdotso/tweet-indexer-service/connection/proto/grpcclient"
+	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/controller"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/service"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
-	"github.com/jeetdotso/tweet-indexer-service/stream/kafka"
-
+	"github.com/jeetdotso/tweet-indexer-service/scheduler"
+	"github.com/robfig/cron"
 	"github.com/rs/zerolog/log"
 )
 
 func main() {
 	//Load app config
 	var (
-		cfg      = config.Load("./config/env/")
-		conn     = mongodb.NewConnection(&cfg.Persistence)
-		grpcconn = grpcclient.NewClientMap(&cfg.Grpc.Clients)
+		cfg  = config.Load("./config/env/")
+		conn = mongodb.NewConnection(&cfg.Persistence)
+		// grpcconn = grpcclient.NewClientMap(&cfg.Grpc.Clients)
 	)
 
-	//Register and start scrapes
-	topicNames := registerScrapes(context.Background(), *cfg, &conn, grpcconn)
+	ctx := context.Background()
 
-	//create indexer kafka topic
-	kafka.CreateTopics(cfg, topicNames)
+	dummSvc := dummyaccount.NewSeleniumService(&conn, cfg)
+	dummSvc.ResetAll(ctx)
+	//Register Scrapes
+	// topicNames, saasIdx := registerScrapes(ctx, *cfg, &conn, grpcconn)
 
+	// //create indexer kafka topic
+	// kafka.CreateTopics(cfg, topicNames)
+
+	//Register Schedulers
+	// go registerSchedulers(cfg, &conn)
+	// grokRetry := service.NewGrokRetryScheduler(cfg, &conn, dummSvc, saasIdx)
+	// for {
+	// 	// fmt.Println("Running scheduler")
+	// 	grokRetry.Execute()
+	// 	time.Sleep(time.Second * 10)
+	// }
 	//Register http endpoints
 	registerHttp(cfg, &conn)
 }
@@ -56,18 +69,41 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 	}
 }
 
-func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap) []string {
+func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap) ([]string, service.SaasIndexer) {
 	// deps
 	var (
-		tweetIndexer = service.NewTweetIndexer(cfg, conn, grpcconn)
+		saasIndexer       = service.NewSaasIndexer(cfg, conn)
+		tokenTweetIndexer = service.NewTokenTweetIndexer(cfg, conn, grpcconn, saasIndexer)
 	)
-
-	// start tweet indexer
-	go tweetIndexer.Start(ctx)
 
 	var topicNames []string
 	// add topic names
-	topicNames = append(topicNames, tweetIndexer.TopicName())
+	topicNames = append(topicNames, saasIndexer.TopicName())
 
-	return topicNames
+	// start tweet indexer
+	// go saasIndexer.Start(ctx)
+	go tokenTweetIndexer.Start(ctx)
+
+	return topicNames, saasIndexer
+}
+
+func registerSchedulers(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dummyaccount.Service, saasIdx service.SaasIndexer) {
+	c := cron.New()
+	jobs := Schedulers(conn, cfg, dummSvc, saasIdx)
+	for _, job := range jobs {
+		_ = c.AddFunc(job.Expression(), job.Execute)
+	}
+	c.Start()
+}
+
+func Schedulers(conn *mongodb.MongoConnection, cfg *config.Config, dummSvc dummyaccount.Service, saasIdx service.SaasIndexer) []scheduler.Scheduler {
+	var (
+		grokRetry = service.NewGrokRetryScheduler(cfg, conn, dummSvc, saasIdx)
+		// healthCheck = accounts_health.NewAccountHealthScheduler(dummyaccount.NewSeleniumService(conn, cfg))
+	)
+
+	return []scheduler.Scheduler{
+		grokRetry,
+		// healthCheck,
+	}
 }
