@@ -275,64 +275,66 @@ func (tc *TwitterClient) AccountTweets(userID string, cursor string) (*gjson.Res
 }
 
 func (tc *TwitterClient) GetTweet(tweetID, username string) (*gjson.Result, error) {
-	// vars := map[string]interface{}{
-	// 	"focalTweetId":                           tweetID,
-	// 	"rankingMode":                            "Relevance",
-	// 	"includePromotedContent":                 true,
-	// 	"with_rux_injections":                    false,
-	// 	"referrer":                               "profile",
-	// 	"controller_data":                        "DAACDAABDAABCgABAAAAAAAAAAAKAAkTJQ1goZZABwAAAAA=",
-	// 	"withCommunity":                          true,
-	// 	"withQuickPromoteEligibilityTweetFields": true,
-	// 	"withBirdwatchNotes":                     true,
-	// 	"withVoice":                              true,
-	// }
-	// feats := map[string]interface{}{
-	// 	"rweb_video_screen_enabled":                                               false,
-	// 	"profile_label_improvements_pcf_label_in_post_enabled":                    true,
-	// 	"rweb_tipjar_consumption_enabled":                                         true,
-	// 	"verified_phone_label_enabled":                                            false,
-	// 	"creator_subscriptions_tweet_preview_api_enabled":                         true,
-	// 	"responsive_web_graphql_timeline_navigation_enabled":                      true,
-	// 	"responsive_web_graphql_skip_user_profile_image_extensions_enabled":       false,
-	// 	"premium_content_api_read_enabled":                                        false,
-	// 	"communities_web_enable_tweet_community_results_fetch":                    true,
-	// 	"c9s_tweet_anatomy_moderator_badge_enabled":                               true,
-	// 	"responsive_web_grok_analyze_button_fetch_trends_enabled":                 false,
-	// 	"responsive_web_grok_analyze_post_followups_enabled":                      true,
-	// 	"responsive_web_jetfuel_frame":                                            false,
-	// 	"responsive_web_grok_share_attachment_enabled":                            true,
-	// 	"articles_preview_enabled":                                                true,
-	// 	"responsive_web_edit_tweet_api_enabled":                                   true,
-	// 	"graphql_is_translatable_rweb_tweet_is_translatable_enabled":              true,
-	// 	"view_counts_everywhere_api_enabled":                                      true,
-	// 	"longform_notetweets_consumption_enabled":                                 true,
-	// 	"responsive_web_twitter_article_tweet_consumption_enabled":                true,
-	// 	"tweet_awards_web_tipping_enabled":                                        false,
-	// 	"responsive_web_grok_show_grok_translated_post":                           false,
-	// 	"responsive_web_grok_analysis_button_from_backend":                        true,
-	// 	"rweb_video_timestamps_enabled":                                           true,
-	// 	"standardized_nudges_misinfo":                                             true,
-	// 	"tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": true,
-	// 	"longform_notetweets_rich_text_read_enabled":                              true,
-	// 	"longform_notetweets_inline_media_enabled":                                true,
-	// 	"responsive_web_graphql_exclude_directive_enabled":                        true,
-	// 	"responsive_web_grok_image_annotation_enabled":                            true, // browser had true
-	// 	"responsive_web_enhance_cards_enabled":                                    false,
-	// }
-	// toggles := map[string]bool{
-	// 	"withArticleRichContentState": true,
-	// 	"withArticlePlainText":        false,
-	// 	"withGrokAnalyze":             false,
-	// 	"withDisallowedReplyControls": false,
-	// }
-	variables := "variables=%7B%22focalTweetId%22%3A%22REPLACEME%22%2C%22with_rux_injections%22%3Afalse%2C%22rankingMode%22%3A%22Relevance%22%2C%22includePromotedContent%22%3Atrue%2C%22withCommunity%22%3Atrue%2C%22withQuickPromoteEligibilityTweetFields%22%3Atrue%2C%22withBirdwatchNotes%22%3Atrue%2C%22withVoice%22%3Atrue%7D&features=%7B%22rweb_video_screen_enabled%22%3Afalse%2C%22profile_label_improvements_pcf_label_in_post_enabled%22%3Atrue%2C%22rweb_tipjar_consumption_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22premium_content_api_read_enabled%22%3Afalse%2C%22communities_web_enable_tweet_community_results_fetch%22%3Atrue%2C%22c9s_tweet_anatomy_moderator_badge_enabled%22%3Atrue%2C%22responsive_web_grok_analyze_button_fetch_trends_enabled%22%3Afalse%2C%22responsive_web_grok_analyze_post_followups_enabled%22%3Atrue%2C%22responsive_web_jetfuel_frame%22%3Afalse%2C%22responsive_web_grok_share_attachment_enabled%22%3Atrue%2C%22articles_preview_enabled%22%3Atrue%2C%22responsive_web_edit_tweet_api_enabled%22%3Atrue%2C%22graphql_is_translatable_rweb_tweet_is_translatable_enabled%22%3Atrue%2C%22view_counts_everywhere_api_enabled%22%3Atrue%2C%22longform_notetweets_consumption_enabled%22%3Atrue%2C%22responsive_web_twitter_article_tweet_consumption_enabled%22%3Atrue%2C%22tweet_awards_web_tipping_enabled%22%3Afalse%2C%22responsive_web_grok_show_grok_translated_post%22%3Afalse%2C%22responsive_web_grok_analysis_button_from_backend%22%3Atrue%2C%22creator_subscriptions_quote_tweet_preview_enabled%22%3Afalse%2C%22freedom_of_speech_not_reach_fetch_enabled%22%3Atrue%2C%22standardized_nudges_misinfo%22%3Atrue%2C%22tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled%22%3Atrue%2C%22longform_notetweets_rich_text_read_enabled%22%3Atrue%2C%22longform_notetweets_inline_media_enabled%22%3Atrue%2C%22responsive_web_grok_image_annotation_enabled%22%3Atrue%2C%22responsive_web_enhance_cards_enabled%22%3Afalse%7D&fieldToggles=%7B%22withArticleRichContentState%22%3Atrue%2C%22withArticlePlainText%22%3Afalse%2C%22withGrokAnalyze%22%3Afalse%2C%22withDisallowedReplyControls%22%3Afalse%7D"
-	// 2) Build the URL
-	variables = strings.Replace(variables, "REPLACEME", tweetID, 1)
+	vars := map[string]interface{}{
+		"focalTweetId":                           tweetID,
+		"rankingMode":                            "Relevance",
+		"includePromotedContent":                 true,
+		"with_rux_injections":                    false,
+		"referrer":                               "profile",
+		"controller_data":                        "DAACDAABDAABCgABAAAAAAAAAAAKAAkTJQ1goZZABwAAAAA=",
+		"withCommunity":                          true,
+		"withQuickPromoteEligibilityTweetFields": true,
+		"withBirdwatchNotes":                     true,
+		"withVoice":                              true,
+	}
+	feats := map[string]interface{}{
+		"rweb_video_screen_enabled":                                               false,
+		"profile_label_improvements_pcf_label_in_post_enabled":                    true,
+		"rweb_tipjar_consumption_enabled":                                         true,
+		"verified_phone_label_enabled":                                            false,
+		"creator_subscriptions_tweet_preview_api_enabled":                         true,
+		"responsive_web_graphql_timeline_navigation_enabled":                      true,
+		"responsive_web_graphql_skip_user_profile_image_extensions_enabled":       false,
+		"premium_content_api_read_enabled":                                        false,
+		"communities_web_enable_tweet_community_results_fetch":                    true,
+		"c9s_tweet_anatomy_moderator_badge_enabled":                               true,
+		"responsive_web_grok_analyze_button_fetch_trends_enabled":                 false,
+		"responsive_web_grok_analyze_post_followups_enabled":                      true,
+		"responsive_web_jetfuel_frame":                                            false,
+		"responsive_web_grok_share_attachment_enabled":                            true,
+		"articles_preview_enabled":                                                true,
+		"responsive_web_edit_tweet_api_enabled":                                   true,
+		"graphql_is_translatable_rweb_tweet_is_translatable_enabled":              true,
+		"view_counts_everywhere_api_enabled":                                      true,
+		"longform_notetweets_consumption_enabled":                                 true,
+		"responsive_web_twitter_article_tweet_consumption_enabled":                true,
+		"tweet_awards_web_tipping_enabled":                                        false,
+		"responsive_web_grok_show_grok_translated_post":                           false,
+		"responsive_web_grok_analysis_button_from_backend":                        true,
+		"rweb_video_timestamps_enabled":                                           true,
+		"standardized_nudges_misinfo":                                             true,
+		"tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": true,
+		"longform_notetweets_rich_text_read_enabled":                              true,
+		"longform_notetweets_inline_media_enabled":                                true,
+		"responsive_web_graphql_exclude_directive_enabled":                        true,
+		"responsive_web_grok_image_annotation_enabled":                            true, // browser had true
+		"responsive_web_enhance_cards_enabled":                                    false,
+	}
+	toggles := map[string]bool{
+		"withArticleRichContentState": true,
+		"withArticlePlainText":        false,
+		"withGrokAnalyze":             false,
+		"withDisallowedReplyControls": false,
+	}
+	// variables := "variables=%7B%22focalTweetId%22%3A%22REPLACEME%22%2C%22with_rux_injections%22%3Afalse%2C%22rankingMode%22%3A%22Relevance%22%2C%22includePromotedContent%22%3Atrue%2C%22withCommunity%22%3Atrue%2C%22withQuickPromoteEligibilityTweetFields%22%3Atrue%2C%22withBirdwatchNotes%22%3Atrue%2C%22withVoice%22%3Atrue%7D&features=%7B%22rweb_video_screen_enabled%22%3Afalse%2C%22profile_label_improvements_pcf_label_in_post_enabled%22%3Atrue%2C%22rweb_tipjar_consumption_enabled%22%3Atrue%2C%22verified_phone_label_enabled%22%3Afalse%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22premium_content_api_read_enabled%22%3Afalse%2C%22communities_web_enable_tweet_community_results_fetch%22%3Atrue%2C%22c9s_tweet_anatomy_moderator_badge_enabled%22%3Atrue%2C%22responsive_web_grok_analyze_button_fetch_trends_enabled%22%3Afalse%2C%22responsive_web_grok_analyze_post_followups_enabled%22%3Atrue%2C%22responsive_web_jetfuel_frame%22%3Afalse%2C%22responsive_web_grok_share_attachment_enabled%22%3Atrue%2C%22articles_preview_enabled%22%3Atrue%2C%22responsive_web_edit_tweet_api_enabled%22%3Atrue%2C%22graphql_is_translatable_rweb_tweet_is_translatable_enabled%22%3Atrue%2C%22view_counts_everywhere_api_enabled%22%3Atrue%2C%22longform_notetweets_consumption_enabled%22%3Atrue%2C%22responsive_web_twitter_article_tweet_consumption_enabled%22%3Atrue%2C%22tweet_awards_web_tipping_enabled%22%3Afalse%2C%22responsive_web_grok_show_grok_translated_post%22%3Afalse%2C%22responsive_web_grok_analysis_button_from_backend%22%3Atrue%2C%22creator_subscriptions_quote_tweet_preview_enabled%22%3Afalse%2C%22freedom_of_speech_not_reach_fetch_enabled%22%3Atrue%2C%22standardized_nudges_misinfo%22%3Atrue%2C%22tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled%22%3Atrue%2C%22longform_notetweets_rich_text_read_enabled%22%3Atrue%2C%22longform_notetweets_inline_media_enabled%22%3Atrue%2C%22responsive_web_grok_image_annotation_enabled%22%3Atrue%2C%22responsive_web_enhance_cards_enabled%22%3Afalse%7D&fieldToggles=%7B%22withArticleRichContentState%22%3Atrue%2C%22withArticlePlainText%22%3Afalse%2C%22withGrokAnalyze%22%3Afalse%2C%22withDisallowedReplyControls%22%3Afalse%7D"
+	// // 2) Build the URL
+	// variables = strings.Replace(variables, "REPLACEME", tweetID, 1)
 	// — 2) Create the GET request
 	endpoint := "https://x.com/i/api/graphql/_8aYOgEDz35BrBcBal1-_w/TweetDetail"
-	fullURL := endpoint +
-		"?" + variables
+	varsJSON, _ := json.Marshal(vars)
+	featsJSON, _ := json.Marshal(feats)
+	togglesJSON, _ := json.Marshal(toggles)
+	fullURL := fmt.Sprintf("%s?variables=%s&features=%s&fieldToggles=%s", endpoint, url.QueryEscape(string(varsJSON)), url.QueryEscape(string(featsJSON)), url.QueryEscape(string(togglesJSON)))
 
 	req, err := realhttp.NewRequest("GET", fullURL, nil)
 	if err != nil {
@@ -368,14 +370,8 @@ func (tc *TwitterClient) GetTweet(tweetID, username string) (*gjson.Result, erro
 	req.Header.Set("Origin", "https://x.com")
 	req.Header.Set("X-Client-Transaction-Id", "DTXZQ0WokMldDdJDg0uAKy75mCK9a13iOi6gczcMdlZtJxND0JIvhPZmPUXtAyJqjUGGzQ4L4y2rQdu60fGQP49QsBWsDg")
 	// req.Header.Set("X-Client-UUID", "<copy-your-chrome-value-here>")
-	txn, err := NewClientTxID(80) // pick a length around 64–80 chars
-	if err != nil {
-		return nil, err
-	}
-	// lPwdj4fWw3rwyceV4FN5AU3bnyI2lv5Ayfek61TOrYNtpJAUuqs742qRSUdMdApu
-	// DTXZQ0WokMldDdJDg0uAKy75mCK9a13iOi6gczcMdlZtJxND0JIvhPZmPUXtAyJqjUGGzQ4L4y2rQdu60fGQP49QsBWsDg
-	// NecpZ+T2BXqAt9o4/32Um9T8M/W4OSkkflI7f13IgN4u500lc5mwSC8pedvENNuPUfiW9TaOTIRQopx25dzawSTmFt8JNg
-	fmt.Println("txn:", txn, " vs ", "DTXZQ0WokMldDdJDg0uAKy75mCK9a13iOi6gczcMdlZtJxND0JIvhPZmPUXtAyJqjUGGzQ4L4y2rQdu60fGQP49QsBWsDg")
+
+	// TODO: get from grok-py-services
 	// req.Header.Set("X-Client-Transaction-Id", txn)
 	var cookiePairs []string
 	for _, c := range tc.Cookies {
