@@ -1,0 +1,41 @@
+
+persistence:
+  s3:
+    bucket: static.jeet.cx
+    endpoint: https://fra1.digitaloceanspaces.com
+    cdnEndpoint: https://static.jeet.cx
+    forcePathStyle: false
+  mongodb:
+    url: mongodb://localhost:27017
+    database: tweet-indexer
+#stream:
+#  kafka:
+#    brokers: localhost:9092
+
+server:
+  port: 7000
+memory:
+  redis:
+    url: localhost
+    user:
+    password:
+    port: 6379
+    tls: false
+
+services:
+    twitterapiservices:
+      host: https://api.twitter.com/2/
+      bearertoken: AAAAAAAAAAAAAAAAAAAAABsnsAEAAAAAYDLC5wY5PN22Ds8BxKasnyP%2Be4Q%3DmCZl0LYpxGeopxDXKfNokqwYjZIXeSlPMEem5OI2IJTYm3YeOE
+    irys:
+      host: https://www.jeet.so/api/irys
+      bearertoken: jeet irys next api temp auth
+    grokapiservices:
+      host: http://127.0.0.1:8000
+grpc:
+  clients:
+    accountableServices:
+      host: localhost:5050
+    saasServices:
+      host: localhost:8080
+  server:
+    port: 8080

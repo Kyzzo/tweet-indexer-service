@@ -1,0 +1,29 @@
+app: tweet-indexer-service
+stream:
+ kafka:
+   brokers: kafka.jeet3.com:9092
+memory:
+  redis:
+    url: redis-staging-data-cluster-do-user-13859356-0.b.db.ondigitalocean.com
+    user: default
+    password:
+    port: 25061
+    tls: true
+persistence:
+  s3:
+    bucket: static.jeet.cx
+    endpoint: https://fra1.digitaloceanspaces.com
+    cdnEndpoint: https://static.jeet.cx
+    forcePathStyle: true
+  mongodb:
+    url: mongodb://localhost:27017
+    database: tweet-indexer
+
+server:
+  port: 9090
+grpc:
+  clients:
+    accountableServices:
+      host: accountable:8080
+  server:
+    port: 8080

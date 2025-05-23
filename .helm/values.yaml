@@ -1,0 +1,19 @@
+replicas: 1
+appName: tweet-indexer-service
+port: 9090
+grpcPort: 8080
+image: ""
+healthCheckPath: /public/indexer/health
+
+#default environment - this should be override by ci
+env: "staging"
+
+host: api.jeet.so
+gateway: "istio-ingress/istio-gateway"
+
+#secrets - this should be override by ci
+mongo_uri: mongodb://localhost:27017
+redis_password: override-this
+twitter_token: override-this
+s3_key: override-this
+s3_secret: override-this

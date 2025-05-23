@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.appName }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}
+  replicas: {{ .Values.replicas }}
+  template:
+    metadata:
+      annotations:
+        k8s.grafana.com/indexer: "true"
+        k8s.grafana.com/metrics.path: "/public/indexer/metrics"
+        k8s.grafana.com/metrics.portNumber: "{{ .Values.port }}"
+        k8s.grafana.com/job: {{ .Values.appName }}
+      labels:
+        app: {{ .Values.appName }}
+    spec:
+      containers:
+        - name: {{ .Values.appName }}
+          image: {{ .Values.image }}
+          env:
+            - name: ENVIRONMENT
+              value: {{ .Values.env }}
+
+            - name: "MONGODB_URI"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.appName }}-secret
+                  key: mongo_uri
+            - name: "REDIS_PASSWORD"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.appName }}-secret
+                  key: redis_password
+
+            - name: "TWITTER_TOKEN"
+              valueFrom:
+                  secretKeyRef:
+                    name: {{ .Values.appName }}-secret
+                    key: twitter_token
+
+            - name: "S3_KEY"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.appName }}-secret
+                  key: s3_key
+            - name: "S3_SECRET"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.appName }}-secret
+                  key: s3_secret
+            - name: "POD_NAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: "POD_NAMESPACE"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: "SERVICE_NAME"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app']
+          ports:
+            - containerPort: {{ .Values.port }}
+              name: http
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.healthCheckPath }}
+              port: {{ .Values.port }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 50%

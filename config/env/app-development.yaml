@@ -1,0 +1,15 @@
+app: tweet-indexer-service
+stream:
+ kafka:
+   brokers: 127.0.0.1:9092
+persistence:
+  s3:
+    key: test
+    secret: test
+    bucket: static.jeet.cx
+    endpoint: http://localhost:4566
+    cdnEndpoint: http://localhost:4566/static.jeet.cx
+    forcePathStyle: true
+  mongodb:
+    url: mongodb+srv://doadmin:pJm2980h5O17Xe3Z@jeet-mongodb-prod-data-cluster-92c595f7.mongo.ondigitalocean.com/admin?tls=true&authSource=admin&replicaSet=jeet-mongodb-prod-data-cluster
+    database: tweet-indexer

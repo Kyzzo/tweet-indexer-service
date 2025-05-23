@@ -1,0 +1,47 @@
+app: tweet-indexer-service
+Kafka:
+  Brokers:
+    - kafka-jkb-do-user-15967845-0.k.db.ondigitalocean.com:9092
+  usePrivate: true   # (you’ll ignore SASL entirely)
+  useSasl:   false
+  username:  ""      # unused in private mode
+  password:  ""
+
+memory:
+  redis:
+    url: private-db-valkey-jkb-do-user-15967845-0.k.db.ondigitalocean.com
+    user: default
+    password:
+    port: 25061
+    tls: true
+persistence:
+  s3:
+    bucket: static.jeet.so
+    endpoint: https://fra1.digitaloceanspaces.com
+    cdnEndpoint: https://static.jeet.so
+    forcePathStyle: true
+  mongodb:
+    url: mongodb://localhost:27017
+    database: tweet-indexer
+
+services:
+    twitterapiservices:
+      host: https://api.twitter.com/2/
+      bearertoken: AAAAAAAAAAAAAAAAAAAAABsnsAEAAAAAYDLC5wY5PN22Ds8BxKasnyP%2Be4Q%3DmCZl0LYpxGeopxDXKfNokqwYjZIXeSlPMEem5OI2IJTYm3YeOE
+    irys:
+      host: https://www.jeet.so/api/irys
+      bearertoken: jeet irys next api temp auth
+    grokapiservices:
+      host: grok-py-services:8000
+
+server:
+  port: 9090
+
+grpc:
+  clients:
+    accountableServices:
+      host: accountable-services:8080
+    saasServices:
+      host: saas-services:8080
+  server:
+    port: 8080
