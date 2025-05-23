@@ -17,27 +17,27 @@ import (
 
 const GrokRetryKey = "grok-retry-lock-sync-minute-job"
 
-type TotalStatsImpl struct {
+type GrokRetyImpl struct {
 	svc       GrokIndexer
 	tweetRepo repository.TweetEventRepository
 }
 
 const (
-	SCHEDULER_THREADS = 5
+	SCHEDULER_THREADS = 30
 )
 
-func NewGrokRetryScheduler(cfg *config.Config, conn *mongodb.MongoConnection, dummySvc dummyaccount.Service) scheduler.Scheduler {
+func NewGrokRetryScheduler(cfg *config.Config, conn *mongodb.MongoConnection, dummySvc dummyaccount.Service, saasIdx SaasIndexer) scheduler.Scheduler {
 	var (
-		svc       = NewGrokIndexer(*cfg, conn, dummySvc)
+		svc       = NewGrokIndexer(*cfg, conn, dummySvc, saasIdx)
 		tweetRepo = repository.NewTweetIndexRepo(conn)
 	)
-	return &TotalStatsImpl{
+	return &GrokRetyImpl{
 		svc:       svc,
 		tweetRepo: tweetRepo,
 	}
 }
 
-func (s *TotalStatsImpl) Execute() {
+func (s *GrokRetyImpl) Execute() {
 	ctx := context.Background()
 	twts, err := s.tweetRepo.FindAllNoneGrok(ctx)
 	if err != nil {
@@ -62,13 +62,14 @@ func (s *TotalStatsImpl) Execute() {
 			s.svc.Start(ctx, &twt, done) // Pass the done channel
 			<-done                       // Wait for completion
 
-			time.Sleep(2 * time.Second)
+			time.Sleep(1 * time.Second)
 		}(t)
 	}
 
 	wg.Wait()
+	fmt.Println("-------------------------Done-------------------------")
 }
 
-func (c *TotalStatsImpl) Expression() string {
+func (c *GrokRetyImpl) Expression() string {
 	return "@every 1m"
 }

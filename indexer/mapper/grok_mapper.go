@@ -19,3 +19,12 @@ func MapGrokToEvent(userID string, gr *twitterTypes.GrokResponse, selAccount str
 		DummyAccount:    selAccount,
 	}
 }
+func MapGrokTokenToEvent(userID string, gr *twitterTypes.GrokTokenResponse, selAccount string) model.GrokTokenEvent {
+	return model.GrokTokenEvent{
+		ID:           gr.TweetId,
+		IsPromoting:  gr.IsPromoting,
+		UserId:       userID,
+		CreatedAt:    time.Now(),
+		DummyAccount: selAccount,
+	}
+}

@@ -8,19 +8,21 @@ import (
 )
 
 // ✅ Convert Twitter API response to TweetEvent
-func MapTweetToEvent(tweet *twitterTypes.TweetInfo, username string) model.TweetEvent {
+func MapTweetToEvent(tweet *twitterTypes.TweetInfo) model.TweetEvent {
 	return model.TweetEvent{
-		ID:               tweet.ID,
-		UserID:           tweet.UserID,
-		TweetType:        tweet.TweetType,
-		UserName:         username,
-		CreatedAt:        parseTime(tweet.CreatedAt),
-		ConversationID:   tweet.ConversationID,
-		ReplyToID:        tweet.ReplyToID,
-		Text:             tweet.Text,
-		RetweetedByID:    tweet.RetweetedByID,
-		CapturedAt:       time.Now(),
-		MediaAttachments: flattenAttachments(tweet.MediaAttachments),
+		ID:                tweet.ID,
+		UserID:            tweet.UserID,
+		TweetType:         tweet.TweetType,
+		UserName:          tweet.Username,
+		TweetID:           tweet.TweetID,
+		RetweetedUsername: tweet.RetweetedUsername,
+		CreatedAt:         parseTime(tweet.CreatedAt),
+		ConversationID:    tweet.ConversationID,
+		ReplyToID:         tweet.ReplyToID,
+		Text:              tweet.Text,
+		RetweetedByID:     tweet.RetweetedByID,
+		CapturedAt:        time.Now(),
+		MediaAttachments:  flattenAttachments(tweet.MediaAttachments),
 	}
 }
 

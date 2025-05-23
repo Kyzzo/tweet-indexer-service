@@ -9,6 +9,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	cache "github.com/jeetdotso/tweet-indexer-service/cache"
+	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser"
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	twitterAPI "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api"
@@ -25,7 +26,7 @@ type TweetsRollBack struct {
 }
 
 func NewTweetsRollBack(ctx context.Context, maxRetries int, retryDelay time.Duration, svc dummyaccount.Service) (*TweetsRollBack, *dummyaccount.SelAccount, error) {
-	selAccount, err := svc.LogInToNext(ctx)
+	selAccount, err := svc.LogInToNextGroup(ctx, dummyaccount.WORKING_GROUP)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium account.")
 		return nil, nil, err
@@ -88,7 +89,7 @@ func TweetsMultithreaded(
 	maxRetries int,
 	retryDelay time.Duration,
 	svc dummyaccount.Service,
-	handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo, username string),
+	handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo),
 ) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, min(threadsNum, len(users)))
@@ -142,8 +143,8 @@ func TweetsMultithreaded(
 			if len(tweets) == 0 {
 				return
 			}
-			for _, tweet := range tweets {
-				handleTweet(ctx, tweet, username)
+			for i := len(tweets) - 1; i >= 0; i-- {
+				handleTweet(ctx, tweets[i])
 			}
 			countLock.Lock()
 			defer countLock.Unlock()
@@ -154,6 +155,104 @@ func TweetsMultithreaded(
 
 	}
 	wg.Wait()
+}
+
+func TweetsPipeline(
+	ctx context.Context,
+	users map[string]time.Time,
+	fetcherCount int, // max concurrent fetchers
+	handlerCount int, // max concurrent handleTweet calls
+	maxRetries int,
+	retryDelay time.Duration,
+	svc dummyaccount.Service,
+	handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo),
+	syncLatestToCheckPoint func(ctx context.Context, user twitteruser.User) time.Time,
+) {
+	type userJob struct {
+		username string
+		since    time.Time
+	}
+	type tweetJob struct {
+		username string
+		tweet    *twitterTypes.TweetInfo
+	}
+
+	userJobs := make(chan userJob)
+	tweetJobs := make(chan tweetJob)
+
+	var wgFetchers sync.WaitGroup
+	var wgHandlers sync.WaitGroup
+
+	// —— 1) Fetch-worker pool ——
+	wgFetchers.Add(fetcherCount)
+	for i := 0; i < fetcherCount; i++ {
+		go func() {
+			// defer wgFetchers.Done()
+			for job := range userJobs {
+				trb, selAcc, err := NewTweetsRollBack(ctx, maxRetries, retryDelay, svc)
+				if err != nil {
+					logg.Log.Error().Err(err).Str("username", job.username).Msg("rollback init failed")
+					continue
+				}
+
+				// make a little cleanup func
+				cleanup := func() {
+					if err := svc.LogOut(ctx, selAcc.UserName); err != nil {
+						logg.Log.Error().
+							Err(err).
+							Str("username", selAcc.UserName).
+							Msg("logout failed")
+					}
+				}
+
+				tweets, err := trb.Tweets(ctx, job.username, job.since)
+				if err != nil {
+					logg.Log.Error().Err(err).Str("username", job.username).Msg("fetch tweets failed")
+					cleanup()
+					continue
+				}
+				if len(tweets) == 0 {
+					cleanup()
+					continue
+				}
+
+				for i := len(tweets) - 1; i >= 0; i-- {
+					tweetJobs <- tweetJob{username: job.username, tweet: tweets[i]}
+				}
+
+				cleanup()
+			}
+			wgFetchers.Done()
+		}()
+	}
+
+	// —— 2) Handler-worker pool ——
+	wgHandlers.Add(handlerCount)
+	for i := 0; i < handlerCount; i++ {
+		go func() {
+			defer wgHandlers.Done()
+			for tj := range tweetJobs {
+				handleTweet(ctx, tj.tweet)
+			}
+		}()
+	}
+
+	// —— 3) Producer: enqueue user jobs ——
+	go func() {
+		for u, since := range users {
+			userJobs <- userJob{username: u, since: since}
+		}
+		close(userJobs)
+	}()
+
+	// —— 4) Wire up shutdown: when all fetchers done, close tweetJobs ——
+	go func() {
+		wgFetchers.Wait()
+		close(tweetJobs)
+	}()
+
+	// —— 5) Wait for all handlers to finish ——
+	wgHandlers.Wait()
 }
 
 func (trb *TweetsRollBack) fetchTweetWithRotation(
@@ -219,7 +318,7 @@ func (trb *TweetsRollBack) processTweetEntries(
 		et := entry.Get("content.entryType").String()
 		switch et {
 		case "TimelineTimelineItem":
-			if ti := tweetParsers.ParseTweetFromEntry(&entry, trackedUser); ti != nil {
+			if ti := tweetParsers.ParseTweetFromEntry(&entry, trackedUser, username); ti != nil {
 				var ts time.Time
 				ts, err := time.Parse(time.RubyDate, ti.CreatedAt)
 				if err != nil {
@@ -228,8 +327,11 @@ func (trb *TweetsRollBack) processTweetEntries(
 						Ctx(ctx).
 						Err(err).
 						Str("statusID", statusID).
+						Str("createdAt", ti.CreatedAt).
 						Msg("Error parsing tweet date")
 					ts = time.Time{}
+					*tweets = append(*tweets, ti)
+					continue
 				}
 				times = append(times, ts)
 				if limitDate.After(ts) {
@@ -248,7 +350,7 @@ func (trb *TweetsRollBack) processTweetEntries(
 		case "TimelineTimelineModule":
 			for _, mod := range entry.Get("content.items").Array() {
 				item := mod.Get("item")
-				if ti := tweetParsers.ParseTweetFromEntry(&item, trackedUser); ti != nil {
+				if ti := tweetParsers.ParseTweetFromEntry(&item, trackedUser, username); ti != nil {
 
 					if ti == nil {
 						logg.Log.Error().
@@ -265,9 +367,14 @@ func (trb *TweetsRollBack) processTweetEntries(
 							Caller().
 							Ctx(ctx).
 							Err(err).
+							Str("username", username).
+							Str("createdAt", ti.CreatedAt).
+							Str("tweet_id", ti.ID).
 							Str("statusID", statusID).
 							Msg("Error parsing tweet date")
 						ts = time.Time{}
+						*tweets = append(*tweets, ti)
+						continue
 					}
 
 					times = append(times, ts)
@@ -362,7 +469,6 @@ func (trb *TweetsRollBack) collectTweets(ctx context.Context, username, UserID s
 
 		instructions := r.Get("data.user.result.timeline_v2.timeline.instructions").Array()
 		if len(instructions) == 0 {
-			logg.Log.Info().Caller().Ctx(ctx).Str("username", username).Msg("No instructions found")
 			break
 		}
 
@@ -372,7 +478,7 @@ func (trb *TweetsRollBack) collectTweets(ctx context.Context, username, UserID s
 		}
 
 		if dateReached = trb.processTweetEntries(ctx, username, UserID, &tweets, entries, limitDate); dateReached {
-			logg.Log.Info().Caller().Ctx(ctx).Str("username", username).Bool("is_dateReached", dateReached).Msg("Reached end condition")
+			// logg.Log.Info().Caller().Ctx(ctx).Str("username", username).Bool("is_dateReached", dateReached).Msg("Reached end condition")
 			break
 		}
 

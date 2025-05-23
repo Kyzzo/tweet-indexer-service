@@ -8,24 +8,21 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/indexer/repository"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
-	"github.com/jeetdotso/tweet-indexer-service/stream"
-	"github.com/jeetdotso/tweet-indexer-service/stream/kafka"
-	"google.golang.org/protobuf/proto"
 )
 
 type TweetAPI struct {
 	repository repository.TweetEventRepository
-	producer   stream.Producer
+	// producer   stream.Producer
 }
 
 func NewTweetAPI(cfg config.Config, conn *mongodb.MongoConnection) TweetAPI {
 	repo := repository.NewTweetIndexRepo(conn)
 
-	producer := kafka.NewProducer(cfg.Stream, stream.StreamTweetIndexReplayTopic)
+	// producer := kafka.NewProducer(cfg.Stream, stream.StreamTweetIndexReplayTopic)
 
 	return TweetAPI{
 		repository: repo,
-		producer:   producer,
+		// producer:   producer,
 	}
 }
 
@@ -66,19 +63,19 @@ func (api TweetAPI) ReplayEventByID(ctx context.Context, id string) error {
 // ✅ Stream a tweet event to Kafka
 func (api TweetAPI) streamTweet(ctx context.Context, tweet model.TweetEvent) {
 	// Convert to Proto
-	tweetProto := tweet.ToProto()
+	// tweetProto := tweet.ToProto()
 
-	// Marshal to binary format
-	b, err := proto.Marshal(tweetProto)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
-		return
-	}
+	// // Marshal to binary format
+	// b, err := proto.Marshal(tweetProto)
+	// if err != nil {
+	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
+	// 	return
+	// }
 
-	// Produce message to Kafka
-	if err = api.producer.Produce([]byte(""), b); err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
-		return
-	}
+	// // Produce message to Kafka
+	// if err = api.producer.Produce([]byte(""), b); err != nil {
+	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
+	// 	return
+	// }
 	logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", tweet.ID).Msg("Tweet event sent!")
 }

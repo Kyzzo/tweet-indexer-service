@@ -19,6 +19,7 @@ type ListRepository interface {
 	FindAllByUserId(ctx context.Context, userId string) ([]twitterTypes.FollowingUser, error)
 	FindAllByID(ctx context.Context, id string) (*twitterTypes.FollowingUser, error)
 	InList(ctx context.Context, username string) (bool, error)
+	Clicked(ctx context.Context, id string) error
 	FindAll(ctx context.Context) ([]twitterTypes.FollowingUser, error)
 }
 type mongoListRepository struct {
@@ -124,4 +125,17 @@ func (repo *mongoListRepository) FindAll(ctx context.Context) ([]twitterTypes.Fo
 	}
 
 	return blockIdxs, nil
+}
+
+func (repo *mongoListRepository) Clicked(ctx context.Context, id string) error {
+	filter := bson.M{"_id": id}
+	update := bson.M{"$set": bson.M{"is_clicked": true}}
+
+	_, err := repo.conn.Datastore.Collection(listCollection).UpdateOne(ctx, filter, update)
+	if err != nil {
+		logg.Log.Error().Err(err).Msg("Error updating block index.")
+		return err
+	}
+
+	return nil
 }

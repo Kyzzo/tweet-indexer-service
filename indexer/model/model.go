@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"time"
 
 	proto "github.com/jeetdotso/tweet-indexer-service/proto"
@@ -8,17 +9,19 @@ import (
 )
 
 type TweetEvent struct {
-	ID               string                 `bson:"_id"`
-	CreatedAt        time.Time              `bson:"created_at"`
-	CapturedAt       time.Time              `bson:"captured_at"`
-	Text             string                 `bson:"text"`
-	UserID           string                 `bson:"user_id"`
-	UserName         string                 `bson:"user_name"`
-	ConversationID   string                 `bson:"conversation_id"`
-	ReplyToID        string                 `bson:"reply_to_id"`
-	TweetType        twitterTypes.TweetType `bson:"tweet_type"`
-	RetweetedByID    string                 `bson:"retweeted_by_id"`
-	MediaAttachments []interface{}          `bson:"media_attachments"`
+	ID                string                 `bson:"_id"`
+	TweetID           string                 `bson:"tweet_id"`
+	CreatedAt         time.Time              `bson:"created_at"`
+	CapturedAt        time.Time              `bson:"captured_at"`
+	Text              string                 `bson:"text"`
+	UserID            string                 `bson:"user_id"`
+	UserName          string                 `bson:"user_name"`
+	ConversationID    string                 `bson:"conversation_id"`
+	ReplyToID         string                 `bson:"reply_to_id"`
+	TweetType         twitterTypes.TweetType `bson:"tweet_type"`
+	RetweetedByID     string                 `bson:"retweet_user_id"`
+	RetweetedUsername string                 `bson:"retweet_username"`
+	MediaAttachments  []interface{}          `bson:"media_attachments"`
 }
 
 type UserCheckPoint struct {
@@ -36,6 +39,14 @@ type GrokEvent struct {
 	UserId          string    `bson:"user_id"`
 	CreatedAt       time.Time `bson:"created_at"`
 	DummyAccount    string    `bson:"dummy_account"`
+	ConvoID         string    `bson:"convo_id"`
+}
+type GrokTokenEvent struct {
+	ID           string    `bson:"_id"`
+	IsPromoting  bool      `bson:"is_promoting"`
+	UserId       string    `bson:"user_id"`
+	CreatedAt    time.Time `bson:"created_at"`
+	DummyAccount string    `bson:"dummy_account"`
 }
 
 type RetweetEvent struct {
@@ -45,6 +56,14 @@ type RetweetEvent struct {
 }
 
 func (te *TweetEvent) GetID() any {
+	return te.ID
+}
+
+func (te *TweetEvent) GetURL() string {
+	return fmt.Sprintf("https://vxtwitter.com/%s/status/%s", te.UserName, te.TweetID)
+}
+
+func (te *GrokTokenEvent) GetID() any {
 	return te.ID
 }
 
@@ -92,6 +111,8 @@ func (ge *GrokEvent) ToProto() *proto.GrokEvent {
 
 type SaasEvent struct {
 	ID            string    `bson:"_id"`
+	TweetId       string    `bson:"tweet_id"`
+	TweetUrl      string    `bson:"tweet_url"`
 	Text          string    `bson:"text"`
 	UserId        string    `bson:"user_id"`
 	TweetType     string    `bson:"tweet_type"`
@@ -103,7 +124,9 @@ func (se *SaasEvent) ToProto() *proto.SaasEvent {
 	return &proto.SaasEvent{
 		Id:            se.ID,
 		Text:          se.Text,
+		TweetId:       se.TweetId,
 		UserId:        se.UserId,
+		TweetUrl:      se.TweetUrl,
 		TweetType:     se.TweetType,
 		TokensShilled: se.TokensShilled,
 		CreatedAt:     se.CreatedAt.Format(time.RFC3339),

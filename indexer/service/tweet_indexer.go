@@ -23,9 +23,7 @@ import (
 	track "github.com/jeetdotso/tweet-indexer-service/scrape/tracking"
 	tracking "github.com/jeetdotso/tweet-indexer-service/scrape/tracking/types"
 	"github.com/jeetdotso/tweet-indexer-service/stream"
-	"github.com/jeetdotso/tweet-indexer-service/stream/kafka"
 	"github.com/jeetdotso/tweet-indexer-service/util"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -46,9 +44,9 @@ type TweetIndexer struct {
 	tweetRepo      repository.TweetEventRepository
 	cycleSvc       cycle.Service
 	checkpointRepo repository.UserCheckPointRepository
-	producer       stream.Producer
-	saasSvc        saas.SassUserService
-	dummSvc        dummyaccount.Service
+	// producer       stream.Producer
+	saasSvc saas.SassUserService
+	dummSvc dummyaccount.Service
 }
 
 func NewTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap) TweetIndexer {
@@ -58,15 +56,15 @@ func NewTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn 
 	saasCli := saas.NewSassUserService(grpcconn, cfg.Services)
 	dummSvc := dummyaccount.NewSeleniumService(conn, &cfg)
 	cycleSvc := cycle.NewCycleService(conn, &cfg)
-	producer := kafka.NewProducer(cfg.Stream, TOPIC_CON)
+	// producer := kafka.NewProducer(cfg.Stream, TOPIC_CON)
 
 	return TweetIndexer{
 		tweetRepo:      tweetRepo,
 		checkpointRepo: checkpointRepo,
-		producer:       producer,
-		cycleSvc:       cycleSvc,
-		saasSvc:        saasCli,
-		dummSvc:        dummSvc,
+		// producer:       producer,
+		cycleSvc: cycleSvc,
+		saasSvc:  saasCli,
+		dummSvc:  dummSvc,
 	}
 }
 
@@ -207,13 +205,13 @@ func (ti TweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twitteru
 }
 
 // ✅ **Handler for new tweets (passed as a callback)**
-func (ti TweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitterTypes.TweetInfo, username string) {
+func (ti TweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitterTypes.TweetInfo) {
 	if tweet == nil {
 		logg.Log.Error().Msg("HandleTweetEvent received a nil tweet")
 		return
 	}
 
-	tweetEvent := mapper.MapTweetToEvent(tweet, username)
+	tweetEvent := mapper.MapTweetToEvent(tweet)
 	//Check if tweet already exists
 	exist, err := ti.tweetRepo.FindAllByID(ctx, tweetEvent.ID)
 	if err != nil {
@@ -247,13 +245,13 @@ func (ti TweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitterTypes
 	}
 }
 
-func (ti TweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet *twitterTypes.TweetInfo, username string) {
+func (ti TweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet *twitterTypes.TweetInfo) {
 	if tweet == nil {
 		logg.Log.Error().Msg("HandleTweetEvent received a nil tweet")
 		return
 	}
 
-	tweetEvent := mapper.MapTweetToEvent(tweet, username)
+	tweetEvent := mapper.MapTweetToEvent(tweet)
 	//Check if tweet already exists
 	exist, err := ti.tweetRepo.FindAllByID(ctx, tweetEvent.ID)
 	if err != nil {
@@ -282,19 +280,19 @@ func (ti TweetIndexer) streamTweet(ctx context.Context, tweetEvent model.TweetEv
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to save tweet event.")
 		return
 	}
-	tweetProto := tweetEvent.ToProto()
+	// tweetProto := tweetEvent.ToProto()
 
-	// Marshal to binary format
-	b, err := proto.Marshal(tweetProto)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
-		return
-	}
+	// // Marshal to binary format
+	// b, err := proto.Marshal(tweetProto)
+	// if err != nil {
+	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
+	// 	return
+	// }
 	// Produce message to Kafka
-	if err = ti.producer.Produce([]byte(LIVE_KEY), b); err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
-		return
-	}
+	// if err = ti.producer.Produce([]byte(LIVE_KEY), b); err != nil {
+	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
+	// 	return
+	// }
 
 	logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", tweetEvent.ID).Msg("Tweet event sent!")
 
@@ -305,21 +303,21 @@ func (ti TweetIndexer) streamRollbackTweet(ctx context.Context, tweetEvent model
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to save tweet event.")
 		return
 	}
-	tweetProto := tweetEvent.ToProto()
+	// tweetProto := tweetEvent.ToProto()
 
-	// Marshal to binary format
-	b, err := proto.Marshal(tweetProto)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
-		return
-	}
-	// Produce message to Kafka
-	if err = ti.producer.Produce([]byte(ROLLBACK_KEY), b); err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
-		return
-	}
+	// // Marshal to binary format
+	// b, err := proto.Marshal(tweetProto)
+	// if err != nil {
+	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
+	// 	return
+	// }
+	// // Produce message to Kafka
+	// if err = ti.producer.Produce([]byte(ROLLBACK_KEY), b); err != nil {
+	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
+	// 	return
+	// }
 
-	logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", tweetEvent.ID).Msg("Tweet event sent!")
+	// logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", tweetEvent.ID).Msg("Tweet event sent!")
 
 }
 

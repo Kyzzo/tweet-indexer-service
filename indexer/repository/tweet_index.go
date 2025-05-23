@@ -14,16 +14,19 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const tweetIndexCollection = "tweet.indexes"
+// TODO: change back to tweet.indexes
+const tweetIndexCollection = "tweet.iii"
 
 type TweetEventRepository interface {
 	SaveOrUpdate(ctx context.Context, blockIndex model.TweetEvent) (interface{}, error)
 	FindAllByUserId(ctx context.Context, userId string, idx int64) ([]model.TweetEvent, error)
 	FindAllByID(ctx context.Context, id string) (*model.TweetEvent, error)
+	FindByTweetId(ctx context.Context, tweetId string) (*model.TweetEvent, error)
 	FindAll(ctx context.Context, idx int64) ([]model.TweetEvent, error)
 	FindAllRaw(ctx context.Context) ([]model.TweetEvent, error)
 	FindMostRecentByUserId(ctx context.Context, userId string) (*model.TweetEvent, error)
 	FindAllNoneGrok(ctx context.Context) ([]model.TweetEvent, error)
+	FindAllNoneTokenGrok(ctx context.Context) ([]model.TweetEvent, error)
 }
 type mongoEventRepository struct {
 	conn    *mongodb.MongoConnection
@@ -179,6 +182,7 @@ func (repo *mongoEventRepository) FindAllNoneGrok(ctx context.Context) ([]model.
 			Value: bson.D{{
 				"tweet_type", bson.D{{
 					"$nin", bson.A{
+						twitterTypes.Reply,
 						twitterTypes.Retweet,
 						twitterTypes.QuoteRetweet,
 					},
@@ -188,6 +192,43 @@ func (repo *mongoEventRepository) FindAllNoneGrok(ctx context.Context) ([]model.
 		// stage 2
 		{{Key: "$lookup", Value: bson.D{
 			{"from", grokIndexCollection},
+			{"localField", "tweet_id"},
+			{"foreignField", "_id"},
+			{"as", "grokMatch"},
+		}}},
+		// stage 3
+		{{Key: "$match", Value: bson.D{{"grokMatch.0", bson.D{{"$exists", false}}}}}},
+		// optional
+		{{"$sort", bson.D{{"captured_at", 1}}}},
+		{{Key: "$project", Value: bson.D{{"grokMatch", 0}}}},
+	}
+
+	cur, err := repo.conn.Datastore.Collection(tweetIndexCollection).Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	var misses []model.TweetEvent
+	if err := cur.All(ctx, &misses); err != nil {
+		return nil, err
+	}
+	return misses, nil
+}
+func (repo *mongoEventRepository) FindAllNoneTokenGrok(ctx context.Context) ([]model.TweetEvent, error) {
+	pipeline := mongo.Pipeline{
+		// stage 1
+		bson.D{{
+			Key: "$match",
+			Value: bson.D{{
+				"tweet_type", bson.D{{
+					"$nin", bson.A{
+						twitterTypes.Reply,
+					},
+				}},
+			}},
+		}},
+		// stage 2
+		{{Key: "$lookup", Value: bson.D{
+			{"from", grokTokenCollection},
 			{"localField", "_id"},
 			{"foreignField", "_id"},
 			{"as", "grokMatch"},
@@ -208,4 +249,18 @@ func (repo *mongoEventRepository) FindAllNoneGrok(ctx context.Context) ([]model.
 		return nil, err
 	}
 	return misses, nil
+}
+
+func (repo *mongoEventRepository) FindByTweetId(ctx context.Context, tweetId string) (*model.TweetEvent, error) {
+	filter := bson.M{"tweet_id": tweetId}
+	var index model.TweetEvent
+	res := repo.conn.Datastore.Collection(tweetIndexCollection).FindOne(ctx, filter)
+	if err := res.Decode(&index); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		logg.Log.Error().Err(err).Msg("Error decoding index result.")
+		return nil, err
+	}
+	return &index, nil
 }
