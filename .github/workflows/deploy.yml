@@ -30,7 +30,7 @@ jobs:
           echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
 
       - name: Build image and Push to tweet indexer service Staging
-        uses: jeetdotso/git-action-do-build-push@v1.3
+        uses: jeetdotso/git-action-do-build-push@v1.4
         if: ${{ steps.vars.outputs.branch == env.STAGING_BRANCH }}
         with:
           do-access-token: ${{ secrets.DO_ACCESS_TOKEN }}
