@@ -69,7 +69,7 @@ jobs:
         with:
           exec: >
             helm upgrade ${{ env.IMAGE_NAME }}-release
-            --set image=${{ vars.DO_CONTAINER_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-production
+            --set image=registry.digitalocean.com/dealswap-registry/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-production
             --set env=production
             --set host=api.jeet.so
             --set mongo_uri='${{ secrets.MONGO_URI_PRODUCTION }}'
