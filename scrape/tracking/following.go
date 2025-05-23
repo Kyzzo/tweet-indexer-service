@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	cache "github.com/jeetdotso/tweet-indexer-service/cache"
 	dummyaccount "github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	twitterAPI "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api"
@@ -21,7 +20,7 @@ type FollowingMonitor struct {
 }
 
 func NewFollowingMonitor(ctx context.Context, svc dummyaccount.Service) (*FollowingMonitor, *dummyaccount.SelAccount, error) {
-	sel, err := svc.LogInToNext(ctx)
+	sel, err := svc.LogInToNextGroup(ctx, dummyaccount.WORKING_GROUP)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium account.")
 		return nil, nil, err
@@ -53,16 +52,12 @@ func (fm *FollowingMonitor) ExtractEntries(r *gjson.Result) []gjson.Result {
 // parses every entry into FollowingUser, and invokes handleFollowing on each.
 func (fm *FollowingMonitor) MonitorSingleAccount(
 	ctx context.Context,
-	username string,
+	id string,
 	maxRetries int,
 	retryDelay time.Duration,
-	handleFollowing func(context.Context, twitterTypes.FollowingUser),
+	handleFollowing func(context.Context, string, twitterTypes.FollowingUser),
 ) error {
 	// 1) look up userID (cache or however you store it)
-	userID, err := cache.GetUserID(username)
-	if err != nil || userID == "" {
-		return fmt.Errorf("no userID for %s: %w", username, err)
-	}
 
 	cursor := ""
 	batch := 1
@@ -71,23 +66,23 @@ func (fm *FollowingMonitor) MonitorSingleAccount(
 		// 2) fetch page with retries
 		var resp *gjson.Result
 		for attempt := 1; attempt <= maxRetries; attempt++ {
-			r, err := fm.twitterAPI.Following(userID, cursor)
+			r, err := fm.twitterAPI.Following(id, cursor)
 			if err == nil {
 				resp = r
 				break
 			}
-			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("username %s: fetching following page %d attempt %d/%d failed", username, batch, attempt, maxRetries)
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("id %s: fetching following page %d attempt %d/%d failed", id, batch, attempt, maxRetries)
 			time.Sleep(retryDelay)
 		}
 		if resp == nil {
-			return fmt.Errorf("max retries reached for %s page %d", username, batch)
+			return fmt.Errorf("max retries reached for %s page %d", id, batch)
 		}
 
 		// 3) extract entries
 		entries, next := extractEntriesAndCursor(resp)
 		if len(entries) == 0 {
 			logg.Log.Info().Caller().Ctx(ctx).
-				Msgf("username %q: no entries on page %d → stopping", username, batch)
+				Msgf("id %q: no entries on page %d → stopping", id, batch)
 			break
 		}
 		fmt.Println("Lenght of entries: ", len(entries))
@@ -95,21 +90,21 @@ func (fm *FollowingMonitor) MonitorSingleAccount(
 			u := followingParsers.ParseFollowing(&e)
 			if u == nil {
 				logg.Log.Error().Caller().Ctx(ctx).
-					Msgf("username %q: failed to parse entry %s", username, e.Raw)
+					Msgf("id %q: failed to parse entry %s", id, e.Raw)
 				continue
 			}
 			if u.Handle == "" {
 				logg.Log.Error().Caller().Ctx(ctx).
-					Msgf("username %q: empty handle for entry %s", username, e.Raw)
+					Msgf("id %q: empty handle for entry %s", id, e.Raw)
 				continue
 			}
-			handleFollowing(ctx, *u)
+			handleFollowing(ctx, id, *u)
 		}
 
 		// if Twitter returns the “end” sentinel, we’re done
 		if next == "" || strings.HasPrefix(next, "0|") {
 			logg.Log.Info().Caller().Ctx(ctx).
-				Msgf("username %q: end of list reached on batch %d", username, batch)
+				Msgf("id %q: end of list reached on batch %d", id, batch)
 			break
 		}
 
@@ -161,7 +156,7 @@ func MonitorMultiple(
 	maxWorkers, maxRetries int,
 	retryDelay time.Duration,
 	svc dummyaccount.Service,
-	handleFollowing func(context.Context, twitterTypes.FollowingUser),
+	handleFollowing func(context.Context, string, twitterTypes.FollowingUser),
 ) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxWorkers)

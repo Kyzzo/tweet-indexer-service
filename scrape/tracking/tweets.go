@@ -74,7 +74,7 @@ func (am *AccountMonitor) GetUser(ctx context.Context, username string) (*twitte
 	return userParsers.ParseUserFromGJSON(r)
 }
 
-func (am *AccountMonitor) MonitorTweets(ctx context.Context, username string, handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo, username string)) {
+func (am *AccountMonitor) MonitorTweets(ctx context.Context, username string, handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo)) {
 	UserID, _ := cache.GetUserID(username)
 	r, _ := am.twitterAPI.AccountTweets(UserID, "")
 	if r == nil {
@@ -98,13 +98,15 @@ func (am *AccountMonitor) MonitorTweets(ctx context.Context, username string, ha
 		if len(entries) == 0 {
 			continue
 		}
-		twt := tweetParsers.ParseTweetFromEntry(&entries[0], UserID)
-		if twt == nil {
+		for _, entry := range entries {
+			twt := tweetParsers.ParseTweetFromEntry(&entry, UserID, username)
+			if twt == nil {
 
-			continue
+				continue
+			}
+			// hand it off to your handler
+			handleTweet(ctx, twt)
 		}
-		// hand it off to your handler
-		handleTweet(ctx, twt, username)
 
 		break
 	}
@@ -198,7 +200,7 @@ func (am *AccountMonitor) ProcessTweet(
 		logg.Log.Debug().Msgf("no new tweets for %s", username)
 	}
 }
-func MonitorTweetsMultipleAccounts(ctx context.Context, usernames []string, maxWorkers int, svc dummyaccount.Service, handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo, username string)) {
+func MonitorTweetsMultipleAccounts(ctx context.Context, usernames []string, maxWorkers int, svc dummyaccount.Service, handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo)) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, maxWorkers)
 
