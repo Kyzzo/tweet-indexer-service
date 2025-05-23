@@ -1,0 +1,82 @@
+name: Deploy go pipeline
+
+env:
+  IMAGE_NAME: tweet-indexer-service
+  STAGING_BRANCH: development
+  PRODUCTION_BRANCH: main
+
+on:
+  push:
+    branches:
+      - main
+      - development
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '^1.23'
+
+      - name: Go Build
+        run: go build .
+
+      - name: Git short commit sha and branch name
+        id: vars
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >> $GITHUB_OUTPUT
+
+      - name: Build image and Push to tweet indexer service Staging
+        uses: jeetdotso/git-action-do-build-push@v1.3
+        if: ${{ steps.vars.outputs.branch == env.STAGING_BRANCH }}
+        with:
+          do-access-token: ${{ secrets.DO_ACCESS_TOKEN }}
+          image-name: ${{ env.IMAGE_NAME }}
+          image-version: ${{ steps.vars.outputs.sha_short }}-staging
+
+      - name: Build image and Push to tweet-indexer Prod
+        uses: jeetdotso/git-action-do-build-push@v1.4
+        if: ${{ steps.vars.outputs.branch == env.PRODUCTION_BRANCH }}
+        with:
+          do-access-token: ${{ secrets.DO_ACCESS_TOKEN }}
+          image-name: ${{ env.IMAGE_NAME }}
+          image-version: ${{ steps.vars.outputs.sha_short }}-production
+
+#      - name: Deploy to staging k8s
+#        uses: WyriHaximus/github-action-helm3@v3
+#        if: ${{ steps.vars.outputs.branch == env.STAGING_BRANCH }}
+#        with:
+#          exec: >
+#            helm upgrade ${{ env.IMAGE_NAME }}-release
+#            --set image=${{ vars.DO_CONTAINER_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-staging
+#            --set env=staging
+#            --set host=api.jeet.sx
+#            --set mongo_uri='${{ secrets.MONGO_URI_STAGING }}'
+#            --set redis_password='${{ secrets.REDIS_PASSWORD_STAGING }}'
+#            --set twitter_token='${{ secrets.TWITTER_TOKEN_STAGING }}'
+#            --set s3_key='${{ secrets.S3_KEY_STAGING }}'
+#            --set s3_secret='${{ secrets.S3_SECRET_STAGING }}'
+#            --set gateway='istio-ingress/istio-gateway'
+#            .helm --install --namespace=default
+#          kubeconfig: ${{ secrets.KUBECONFIG_STAGING }}
+
+      - name: Deploy to production k8s
+        uses: WyriHaximus/github-action-helm3@v3
+        if: ${{ steps.vars.outputs.branch == env.PRODUCTION_BRANCH }}
+        with:
+          exec: >
+            helm upgrade ${{ env.IMAGE_NAME }}-release
+            --set image=${{ vars.DO_CONTAINER_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-production
+            --set env=production
+            --set host=api.jeet.so
+            --set mongo_uri='${{ secrets.MONGO_URI_PRODUCTION }}'
+            --set redis_password='${{ secrets.REDIS_PASSWORD_PRODUCTION }}'
+            --set twitter_token='${{ secrets.TWITTER_TOKEN_PRODUCTION }}'
+            --set s3_key='${{ secrets.S3_KEY_PRODUCTION }}'
+            --set s3_secret='${{ secrets.S3_SECRET_PRODUCTION }}'
+            --set gateway='istio-ingress/istio-gateway'
+            .helm --install --namespace=default
+          kubeconfig: ${{ secrets.KUBECONFIG_PRODUCTION }}
