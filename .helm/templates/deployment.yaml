@@ -59,6 +59,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: REPLICAS
+              value: "{{ .Values.replicas }}"
             - name: "SERVICE_NAME"
               valueFrom:
                 fieldRef:

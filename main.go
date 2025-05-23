@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jeetdotso/tweet-indexer-service/config"
@@ -22,6 +25,37 @@ func main() {
 		cfg  = config.Load("./config/env/")
 		conn = mongodb.NewConnection(&cfg.Persistence)
 		// grpcconn = grpcclient.NewClientMap(&cfg.Grpc.Clients)
+	)
+
+	//create []int 0-30
+	var saasIdx []int
+	for i := 0; i < 30; i++ {
+		saasIdx = append(saasIdx, i)
+	}
+	podName := os.Getenv("POD_NAME") // e.g. "grok-py-1"
+	parts := strings.Split(podName, "-")
+	ordinal, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		log.Printf("invalid pod name %q: %v", podName, err)
+	}
+
+	// how many replicas total?
+	reps, err := strconv.Atoi(os.Getenv("REPLICAS")) // injected by Helm
+	if err != nil {
+		log.Printf("invalid REPLICAS: %v", err)
+	}
+
+	// compute your “chunk”
+	chunkSize := (len(saasIdx) + reps - 1) / reps
+	start := ordinal * chunkSize
+	end := start + chunkSize
+	if end > len(saasIdx) {
+		end = len(saasIdx)
+	}
+
+	mySlice := saasIdx[start:end]
+	log.Printf("pod=%s ordinal=%d/%d picking indices %v\n",
+		podName, ordinal, reps, mySlice,
 	)
 
 	ctx := context.Background()
