@@ -237,7 +237,7 @@ func (hlp *HelperDefaultImpl) LogInPassword(ctx context.Context, wd selenium.Web
 	}
 
 	// Add a delay to see the result (optional)
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 	return nil
 }
 
@@ -373,7 +373,7 @@ func (hlp *HelperDefaultImpl) Get2FAToken(wd selenium.WebDriver, secret string) 
 	// if err != nil {
 	// 	return "", fmt.Errorf("failed to enter token period: %v", err)
 	// }
-	time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 	secretInput.Clear()
 	err = secretInput.SendKeys(secret)
 	if err != nil {
@@ -381,7 +381,7 @@ func (hlp *HelperDefaultImpl) Get2FAToken(wd selenium.WebDriver, secret string) 
 	}
 
 	// Wait a few seconds for the page to update the TOTP
-	time.Sleep(3 * time.Second)
+	time.Sleep(4 * time.Second)
 
 	// Get the generated TOTP code
 	totpElement, err := wd.FindElement(selenium.ByID, "token")
@@ -392,6 +392,6 @@ func (hlp *HelperDefaultImpl) Get2FAToken(wd selenium.WebDriver, secret string) 
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve TOTP code: %v", err)
 	}
-
+	fmt.Println("TOTP Code: ", totpCode)
 	return totpCode, nil
 }

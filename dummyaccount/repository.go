@@ -24,6 +24,7 @@ type Repository interface {
 	ResetAll(ctx context.Context) error
 	FindAllByGroup(ctx context.Context, group int) ([]*SelAccount, error)
 	UpdateAllToGroup(ctx context.Context, group int) error
+	AcquireNextByGroup(ctx context.Context, group int) (*SelAccount, error)
 }
 type MongoRepository struct {
 	conn    *mongodb.MongoConnection
@@ -101,6 +102,39 @@ func (repo *MongoRepository) FindNextByGroup(ctx context.Context, group int) (*S
 	return &account, nil
 }
 
+func (repo *MongoRepository) AcquireNextByGroup(ctx context.Context, group int) (*SelAccount, error) {
+	// 1) Filter for group membership and in_use=false
+	filter := bson.M{
+		"in_use": false,
+		"group":  bson.M{"$in": bson.A{group}},
+	}
+
+	// 2) Update sets in_use=true and bumps timestamps
+	update := bson.M{"$set": bson.M{
+		"in_use":         true,
+		"last_logged_in": time.Now(),
+		"updated_at":     time.Now(),
+	}}
+
+	// 3) We want to pick the lowest-updated_at first:
+	opts := options.FindOneAndUpdate().
+		SetSort(bson.M{"updated_at": 1}).
+		SetReturnDocument(options.After) // return the doc *after* update
+
+	var acct SelAccount
+	err := repo.conn.Datastore.
+		Collection(repo.absrepo.Collection).
+		FindOneAndUpdate(ctx, filter, update, opts).
+		Decode(&acct)
+
+	if err == mongo.ErrNoDocuments {
+		return nil, nil // no free accounts
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &acct, nil
+}
 func (repo *MongoRepository) FindInUse(ctx context.Context, group int) (*SelAccount, error) {
 	filter := bson.M{"in_use": true, "group": group}
 

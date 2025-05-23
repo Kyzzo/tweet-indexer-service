@@ -12,7 +12,7 @@ import (
 )
 
 type Service interface {
-	NewAccount(ctx context.Context, username, password string, group int) error
+	NewAccount(ctx context.Context, username, password string, group int, from string) error
 	JustAddCookies(ctx context.Context, username string, cookies []selenium.Cookie) error
 	FindInUse(ctx context.Context, group int) (*SelAccount, error)
 	RemoveCookies(ctx context.Context, username string) error
@@ -23,9 +23,8 @@ type Service interface {
 	SwitchGroup(ctx context.Context, username string, group int) error
 	FindByUsername(ctx context.Context, username string) (*SelAccount, error)
 	ResetAll(ctx context.Context) error
-	FindAndAddTokens(ctx context.Context, username, bearer, csrf string) error
 	FindAllByGroup(ctx context.Context, group int) ([]*SelAccount, error)
-	NewTwoFaAccount(ctx context.Context, username, password string, group int, twoPreFa string) error
+	NewTwoFaAccount(ctx context.Context, username, password string, group int, twoPreFa, from string) error
 	Update2FaCode(ctx context.Context, username, code string) error
 }
 
@@ -58,24 +57,6 @@ func (s *ServiceDefaultImpl) Update2FaCode(ctx context.Context, username, code s
 		return ErrUserNotFound
 	}
 	sl.TwoFACode = code
-	err = s.repo.UpdateOrInsert(ctx, sl)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating sel.")
-		return err
-	}
-	return nil
-}
-
-func (s *ServiceDefaultImpl) FindAndAddTokens(ctx context.Context, username, bearer, csrf string) error {
-	sl, err := s.repo.FindById(ctx, username)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding sel account.")
-		return err
-	}
-	if sl == nil {
-		return ErrUserNotFound
-	}
-	sl.AddTokens(bearer, csrf)
 	err = s.repo.UpdateOrInsert(ctx, sl)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating sel.")
@@ -118,8 +99,8 @@ func (s *ServiceDefaultImpl) JustAddCookies(ctx context.Context, username string
 	return nil
 }
 
-func (s *ServiceDefaultImpl) NewAccount(ctx context.Context, username, password string, group int) error {
-	sa := NewAccount(username, password, group)
+func (s *ServiceDefaultImpl) NewAccount(ctx context.Context, username, password string, group int, from string) error {
+	sa := NewAccount(username, password, group, from)
 	err := s.repo.UpdateOrInsert(ctx, sa)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error inserting selenium account.")
@@ -127,8 +108,8 @@ func (s *ServiceDefaultImpl) NewAccount(ctx context.Context, username, password 
 	}
 	return nil
 }
-func (s *ServiceDefaultImpl) NewTwoFaAccount(ctx context.Context, username, password string, group int, twoPreFa string) error {
-	sa := NewTwoFaAccount(username, password, group, twoPreFa)
+func (s *ServiceDefaultImpl) NewTwoFaAccount(ctx context.Context, username, password string, group int, twoPreFa, from string) error {
+	sa := NewTwoFaAccount(username, password, group, twoPreFa, from)
 	err := s.repo.UpdateOrInsert(ctx, sa)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error inserting selenium account.")
@@ -176,27 +157,14 @@ func (s *ServiceDefaultImpl) LogInToNext(ctx context.Context) (*SelAccount, erro
 
 	return sl, nil
 }
-func (s *ServiceDefaultImpl) LogInToNextGroup(ctx context.Context, group int) (*SelAccount, error) {
 
-	nextGroupMu.Lock()
-	defer nextGroupMu.Unlock()
-	// Getting next
-	sl, err := s.repo.FindNextByGroup(ctx, group)
+func (s *ServiceDefaultImpl) LogInToNextGroup(ctx context.Context, group int) (*SelAccount, error) {
+	sl, err := s.repo.AcquireNextByGroup(ctx, group)
 	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding next selenium account.")
 		return nil, err
 	}
 	if sl == nil {
 		return nil, errEmptyAccount
-	}
-	sl.InUse = true
-	sl.UpdatedAt = time.Now()
-	sl.LastLoggedIn = time.Now()
-
-	err = s.repo.UpdateOrInsert(ctx, sl)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating selenium account.")
-		return nil, err
 	}
 
 	return sl, nil

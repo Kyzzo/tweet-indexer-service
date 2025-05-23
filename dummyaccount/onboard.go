@@ -112,7 +112,12 @@ func (s *OnboardDefaultImpl) check2fa(ctx context.Context, account *SelAccount) 
 
 	// Save cookies to DB
 	account.Cookies = cookies
-	account.Group = TEST_GROUP
+	if len(cookies) < 11 {
+		account.Group = NEW_GROUP
+	} else {
+
+		account.Group = TEST_GROUP
+	}
 
 	account.TwoFACode = session2fa
 

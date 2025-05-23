@@ -2,9 +2,10 @@ package dummyaccount
 
 import (
 	"errors"
+	"net/http"
 	"time"
 
-	http "github.com/bogdanfinn/fhttp"
+	fhttp "github.com/bogdanfinn/fhttp"
 	"github.com/tebeka/selenium"
 )
 
@@ -15,67 +16,52 @@ var (
 )
 
 type SelAccount struct {
-	UserName      string            `bson:"username" json:"username"`
-	Password      string            `bson:"password" json:"password"`
-	BearerToken   string            `bson:"bearer_token" json:"bearer_token"`
-	CsrfToken     string            `bson:"csrf_token" json:"csrf_token"`
-	Group         int               `bson:"group" json:"group"`
-	LastLoggedIn  time.Time         `bson:"last_log_in" json:"last_log_in"`
-	InUse         bool              `bson:"in_use" json:"in_use"`
-	CallsMade     int               `bson:"calls_made" json:"calls_made"`
-	TweetsScraped int               `bson:"tweets_scraped" json:"tweets_scraped"`
-	Cookies       []selenium.Cookie `bson:"cookies" json:"cookies"`
-	TwoFAPre      string            `bson:"two_fa_pre" json:"two_fa_pre"`
-	TwoFACode     string            `bson:"two_fa_code" json:"two_fa_code"`
-	UpdatedAt     time.Time         `bson:"updated_at" json:"updated_at"`
+	UserName     string            `bson:"username" json:"username"`
+	Password     string            `bson:"password" json:"password"`
+	BoughtFrom   string            `bson:"bought_from" json:"bought_from"`
+	Group        int               `bson:"group" json:"group"`
+	LastLoggedIn time.Time         `bson:"last_log_in" json:"last_log_in"`
+	InUse        bool              `bson:"in_use" json:"in_use"`
+	Cookies      []selenium.Cookie `bson:"cookies" json:"cookies"`
+	TwoFAPre     string            `bson:"two_fa_pre" json:"two_fa_pre"`
+	TwoFACode    string            `bson:"two_fa_code" json:"two_fa_code"`
+	UpdatedAt    time.Time         `bson:"updated_at" json:"updated_at"`
 }
 
 func (sA *SelAccount) GetID() any {
 	return sA.UserName
 }
 
-func NewAccount(username, password string, group int) *SelAccount {
+func NewAccount(username, password string, group int, from string) *SelAccount {
 	return &SelAccount{
-		UserName:      username,
-		Password:      password,
-		InUse:         false,
-		LastLoggedIn:  time.Now(),
-		Cookies:       []selenium.Cookie{},
-		CallsMade:     0,
-		TweetsScraped: 0,
-		Group:         group,
-		UpdatedAt:     time.Now(),
+		UserName:     username,
+		Password:     password,
+		InUse:        false,
+		LastLoggedIn: time.Now(),
+		Cookies:      []selenium.Cookie{},
+		Group:        group,
+		UpdatedAt:    time.Now(),
+		BoughtFrom:   from,
 	}
 }
-func NewTwoFaAccount(username, password string, group int, twoFaPre string) *SelAccount {
+func NewTwoFaAccount(username, password string, group int, twoFaPre, from string) *SelAccount {
 	return &SelAccount{
-		UserName:      username,
-		Password:      password,
-		InUse:         false,
-		LastLoggedIn:  time.Now(),
-		Cookies:       []selenium.Cookie{},
-		CallsMade:     0,
-		TwoFAPre:      twoFaPre,
-		TweetsScraped: 0,
-		Group:         group,
-		UpdatedAt:     time.Now(),
+		UserName:     username,
+		Password:     password,
+		InUse:        false,
+		LastLoggedIn: time.Now(),
+		Cookies:      []selenium.Cookie{},
+		TwoFAPre:     twoFaPre,
+		Group:        group,
+		UpdatedAt:    time.Now(),
+		BoughtFrom:   from,
 	}
-}
-func (sc *SelAccount) AddTokens(bearer, csrf string) {
-	sc.BearerToken = bearer
-	sc.CsrfToken = csrf
-	sc.UpdatedAt = time.Now()
 }
 
 func (sc *SelAccount) AddSeleniumCookies(cookies []selenium.Cookie) {
 	sc.Cookies = append(sc.Cookies, cookies...)
 	sc.UpdatedAt = time.Now()
 	sc.LastLoggedIn = time.Now()
-}
-func (sc *SelAccount) AddIncrement(num int) {
-	sc.TweetsScraped += num
-	sc.CallsMade += 1
-	sc.UpdatedAt = time.Now()
 }
 
 func (sc *SelAccount) LoggInGood() bool {
@@ -107,10 +93,10 @@ type Quote struct {
 func (sc *SelAccount) GetCookies() []selenium.Cookie {
 	return sc.Cookies
 }
-func (sc *SelAccount) GetCookiesHttp() []*http.Cookie {
-	cookies := make([]*http.Cookie, 0)
+func (sc *SelAccount) GetCookiesHttp() []*fhttp.Cookie {
+	cookies := make([]*fhttp.Cookie, 0)
 	for _, c := range sc.Cookies {
-		cookies = append(cookies, &http.Cookie{
+		cookies = append(cookies, &fhttp.Cookie{
 			Name:       c.Name,
 			Value:      c.Value,
 			Path:       c.Path,
@@ -118,6 +104,17 @@ func (sc *SelAccount) GetCookiesHttp() []*http.Cookie {
 			Expires:    time.Unix(int64(c.Expiry), 0),
 			RawExpires: time.Unix(int64(c.Expiry), 0).Format(time.RFC1123),
 			Secure:     c.Secure,
+		})
+	}
+	return cookies
+}
+
+func (sc *SelAccount) GetCookiesRealHttp() []*http.Cookie {
+	cookies := make([]*http.Cookie, 0)
+	for _, c := range sc.Cookies {
+		cookies = append(cookies, &http.Cookie{
+			Name:  c.Name,
+			Value: c.Value,
 		})
 	}
 	return cookies
