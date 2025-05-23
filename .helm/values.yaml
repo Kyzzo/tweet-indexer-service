@@ -8,7 +8,7 @@ healthCheckPath: /public/indexer/health
 #default environment - this should be override by ci
 env: "staging"
 
-host: api.jeet.so
+host: jkbapi.app
 gateway: "istio-ingress/istio-gateway"
 
 #secrets - this should be override by ci
