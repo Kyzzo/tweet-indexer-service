@@ -12,7 +12,8 @@ type FollowingUser struct {
 	Followers  int    `bson:"follower_count"  json:"follower_count"`
 	Following  int    `bson:"following_count" json:"following_count"`
 	Verified   bool   `bson:"verified"        json:"verified"`
-	IsCLicked  bool   `bson:"is_clicked"      json:"is_clicked"`
+	IsCrypto   bool   `bson:"is_crypto"       json:"is_crypto"`
+	Tracking   bool   `bson:"tracking"        json:"tracking"`
 }
 
 func (f *FollowingUser) GetID() any {
