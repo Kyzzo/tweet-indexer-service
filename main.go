@@ -29,7 +29,7 @@ func main() {
 
 	//create []int 0-30
 	var saasIdx []int
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 1494; i++ {
 		saasIdx = append(saasIdx, i)
 	}
 	podName := os.Getenv("POD_NAME") // e.g. "grok-py-1"
@@ -54,9 +54,8 @@ func main() {
 	}
 
 	mySlice := saasIdx[start:end]
-	log.Printf("pod=%s ordinal=%d/%d picking indices %v\n",
-		podName, ordinal, reps, mySlice,
-	)
+	log.Printf("pod=%s ordinal=%d/%d picking indices %d-%d total amount: %d\n",
+		podName, ordinal, reps, mySlice[0], mySlice[len(mySlice)-1], len(saasIdx))
 
 	ctx := context.Background()
 
