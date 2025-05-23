@@ -6,9 +6,13 @@ option go_package = "github.com/jeetdotso/tweet-indexer-service/proto";
 
 message SaasEvent {
     string id = 1;
-    string text = 2;
-    string user_id = 3;
-    string tweet_type = 4;
-    string created_at = 5;
-    repeated string TokensShilled = 6;
+    string tweet_id = 2;
+    string tweet_url = 3;
+    string text = 4;
+    string user_id = 5;
+    string tweet_type = 6;
+    string created_at = 7;
+    repeated string TokensShilled = 8;
+
   }
+
