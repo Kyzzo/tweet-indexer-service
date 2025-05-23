@@ -1,6 +1,7 @@
 package tweetParsers
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/tidwall/gjson"
@@ -64,8 +65,64 @@ func ParseTweet(r *gjson.Result, tweetID, trackedUserId string) *twitterTypes.Tw
 
 	return &tweetInfo
 }
-func ParseTweetFromEntry(entry *gjson.Result, trackedUserID string) *twitterTypes.TweetInfo {
+func extractFullText(obj gjson.Result) string {
+	// 1) If it’s a note-tweet, grab the note text
+	if note := obj.Get("note_tweet.note_tweet_results.result"); note.Exists() {
+		if t := note.Get("text"); t.Exists() {
+			return t.String()
+		}
+		if t := note.Get("legacy.full_text"); t.Exists() {
+			return t.String()
+		}
+	}
+	// 2) Else fall back to the main full_text
+	if t := obj.Get("legacy.full_text"); t.Exists() {
+		return t.String()
+	}
+	// 3) Some payloads nest the tweet under `tweet`
+	if t := obj.Get("tweet.legacy.full_text"); t.Exists() {
+		return t.String()
+	}
+	return ""
+}
+func ParseTweetFromEntry(entry *gjson.Result, trackedUserID, trackedUsername string) *twitterTypes.TweetInfo {
+	if entry.Get("content.entryType").String() == "TimelineTimelineModule" {
+		items := entry.Get("content.items").Array()
+		if len(items) == 0 {
+			return nil
+		}
 
+		// Gather all texts & media
+		var texts []string
+		var media []interface{}
+		for _, mod := range items {
+			child := mod.Get("item")
+			// reuse your existing single‐tweet logic by slicing off the module flag
+			if ti := ParseTweetFromEntry(&child, trackedUserID, trackedUsername); ti != nil {
+				texts = append(texts, ti.Text)
+				if ti.MediaAttachments != nil {
+					media = append(media, *ti.MediaAttachments...)
+				}
+			}
+		}
+
+		// Use the first tweet in the module as the "root" for the ID, CreatedAt, user, etc.
+		first := items[0].Get("item.itemContent.tweet_results.result")
+		rootID := first.Get("rest_id").String()
+		created := first.Get("legacy.created_at").String()
+		// all the other fields (replyTo, retweets, etc.) we leave blank for a thread
+
+		return &twitterTypes.TweetInfo{
+			ID:               rootID,
+			TweetID:          rootID,
+			CreatedAt:        created,
+			Text:             strings.Join(texts, "\n\n"),
+			MediaAttachments: &media,
+			UserID:           trackedUserID,
+			Username:         trackedUsername,
+			TweetType:        twitterTypes.Thread, // make sure you’ve defined this new type
+		}
+	}
 	t := entry.Get("content.itemContent.tweet_results.result")
 	// 2) when you passed in the whole module entry
 	if !t.Exists() {
@@ -124,24 +181,129 @@ func ParseTweetFromEntry(entry *gjson.Result, trackedUserID string) *twitterType
 			for _, m := range qr.Get("legacy.extended_entities.media").Array() {
 				attachments = append(attachments, m.Value())
 			}
+
+			if textField := qr.Get("note_tweet.note_tweet_results.result.text"); textField.Exists() {
+				quoteText := textField.String()
+				text = fmt.Sprintf("%s\nQuote: %s", text, quoteText)
+			}
 		}
 	}
+	if typ != twitterTypes.Quote && typ != twitterTypes.QuoteRetweet {
+		if note := t.Get("note_tweet.note_tweet_results.result"); note.Exists() {
+			if textField := note.Get("text"); textField.Exists() {
+				text = textField.String()
+			} else if legacyField := note.Get("legacy.full_text"); legacyField.Exists() {
+				text = legacyField.String()
+			}
+		} else {
+			fullText := t.Get("legacy.full_text").String()
+			if fullText != "" {
+				text = fullText
+			} else {
+				text = t.Get("tweet.legacy.full_text").String()
+			}
+		}
+
+	}
+	if typ == twitterTypes.Retweet || typ == twitterTypes.QuoteRetweet {
+		if ft := t.Get("legacy.retweeted_status_result.result"); ft.Exists() {
+			if note := ft.Get("note_tweet.note_tweet_results.result"); note.Exists() {
+				if textField := note.Get("text"); textField.Exists() {
+					text = textField.String()
+				} else if legacyField := note.Get("legacy.full_text"); legacyField.Exists() {
+					text = legacyField.String()
+				}
+			} else {
+				fullText := ft.Get("legacy.full_text").String()
+				if fullText != "" {
+					text = fullText
+				} else {
+					text = ft.Get("tweet.legacy.full_text").String()
+				}
+			}
+		} else if ft := t.Get("retweeted_status_result.result"); ft.Exists() {
+			if note := ft.Get("note_tweet.note_tweet_results.result"); note.Exists() {
+				if textField := note.Get("text"); textField.Exists() {
+					text = textField.String()
+				} else if legacyField := note.Get("legacy.full_text"); legacyField.Exists() {
+					text = legacyField.String()
+				}
+			} else {
+				fullText := ft.Get("legacy.full_text").String()
+				if fullText != "" {
+					text = fullText
+				} else {
+					text = ft.Get("tweet.legacy.full_text").String()
+				}
+			}
+
+		}
+	}
+	if typ == twitterTypes.QuoteRetweet {
+		qr := t.Get("retweeted_status_result.result.quoted_status_result.result")
+		var quoteText string
+		if qr.Exists() {
+			if textField := qr.Get("note_tweet.note_tweet_results.result.text"); textField.Exists() {
+				quoteText = textField.String()
+			} else if legacyField := qr.Get("legacy.full_text"); legacyField.Exists() {
+				quoteText = legacyField.String()
+			}
+			if quoteText != "" {
+				text = fmt.Sprintf("%s\nQuote: %s", text, quoteText)
+			}
+			for _, m := range qr.Get("legacy.entities.media").Array() {
+				attachments = append(attachments, m.Value())
+			}
+			for _, m := range qr.Get("legacy.extended_entities.media").Array() {
+				attachments = append(attachments, m.Value())
+			}
+
+		} else if qr = t.Get("legacy.retweeted_status_result.result.quoted_status_result.result"); qr.Exists() {
+			if textField := qr.Get("note_tweet.note_tweet_results.result.text"); textField.Exists() {
+				quoteText = textField.String()
+			} else if legacyField := qr.Get("legacy.full_text"); legacyField.Exists() {
+				quoteText = legacyField.String()
+			}
+			if quoteText != "" {
+				text = fmt.Sprintf("%s\nQuote: %s", text, quoteText)
+			}
+			for _, m := range qr.Get("legacy.entities.media").Array() {
+				attachments = append(attachments, m.Value())
+			}
+			for _, m := range qr.Get("legacy.extended_entities.media").Array() {
+				attachments = append(attachments, m.Value())
+			}
+
+		}
+	}
+	var (
+		uniqueId           = id
+		retweeted_username = ""
+		retweetedBy        = ""
+	)
 
 	// who retweeted it (if at all)
-	retweetedBy := ""
-	if typ == twitterTypes.Retweet {
+	if typ == twitterTypes.Retweet || typ == twitterTypes.QuoteRetweet {
 		// in a “single‐entry” payload, we assume the trackedUser did the RT
-		retweetedBy = trackedUserID
+		uniqueId = fmt.Sprintf("%s_%s", trackedUserID, id)
+		if mentions := t.Get("legacy.entities.user_mentions").Array(); len(mentions) > 0 {
+			retweeted_username = mentions[0].Get("screen_name").String()
+			retweetedBy = mentions[0].Get("id_str").String()
+		}
+
 	}
 	return &twitterTypes.TweetInfo{
-		ID:               id,
-		CreatedAt:        created,
-		Text:             text,
-		MediaAttachments: &attachments,
-		UserID:           userID,
-		ConversationID:   convoID,
-		ReplyToID:        replyTo,
-		TweetType:        typ,
-		RetweetedByID:    retweetedBy,
+		ID:                uniqueId,
+		CreatedAt:         created,
+		Text:              text,
+		MediaAttachments:  &attachments,
+		UserID:            userID,
+		ConversationID:    convoID,
+		ReplyToID:         replyTo,
+		TweetType:         typ,
+		RetweetedByID:     retweetedBy,
+		TweetID:           id,
+		Username:          trackedUsername,
+		RetweetedUsername: retweeted_username,
 	}
 }

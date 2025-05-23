@@ -27,6 +27,21 @@ func ParseGrokMessage(tweetId, message string) *twitterTypes.GrokResponse {
 
 	return &resp
 }
+func ParseTokenGrokMessage(tweetId, message string) *twitterTypes.GrokTokenResponse {
+	lines := strings.Split(message, "\n")
+
+	var resp twitterTypes.GrokTokenResponse
+	resp.TweetId = tweetId
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "isPromoting:") {
+			resp.IsPromoting = strings.Contains(line, "true")
+		}
+	}
+
+	return &resp
+}
 
 func parseTokens(tokenStr string) []string {
 	tokens := strings.Split(tokenStr, ",")
