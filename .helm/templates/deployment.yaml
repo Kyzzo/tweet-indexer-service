@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: statefulset
+kind: StatefulSet
 metadata:
   name: {{ .Values.appName }}-headless
 spec:
@@ -29,17 +29,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.appName }}-secret
                   key: mongo_uri
-            - name: "REDIS_PASSWORD"
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.appName }}-secret
-                  key: redis_password
 
             - name: "TWITTER_TOKEN"
               valueFrom:
                   secretKeyRef:
                     name: {{ .Values.appName }}-secret
                     key: twitter_token
+            - name: "REDIS_PASSWORD"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.appName }}-secret
+                  key: redis_password
 
             - name: "S3_KEY"
               valueFrom:
