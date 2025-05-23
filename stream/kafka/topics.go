@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"log"
 	"net"
 	"strconv"
 
@@ -12,7 +13,7 @@ import (
 
 func CreateTopics(cfg *config.Config, topicNames []string) {
 
-	conn, err := kafka.Dial("tcp", cfg.Stream.Kafka.Brokers)
+	conn, err := kafka.Dial("tcp", util.JoinStrings(cfg.Stream.Kafka.Brokers, ","))
 	if err != nil {
 		panic(err.Error())
 	}
@@ -49,12 +50,13 @@ func CreateTopics(cfg *config.Config, topicNames []string) {
 
 	err = controllerConn.CreateTopics(topicsCfg...)
 	if err != nil {
-		panic(err.Error())
+		// panic(err.Error())
+		log.Println("Error creating topics: ", err.Error())
 	}
 }
 
 func Topics(streamCfg config.Stream) []string {
-	conn, err := kafka.Dial("tcp", streamCfg.Kafka.Brokers)
+	conn, err := kafka.Dial("tcp", util.JoinStrings(streamCfg.Kafka.Brokers, ","))
 	if err != nil {
 		panic(err.Error())
 	}
