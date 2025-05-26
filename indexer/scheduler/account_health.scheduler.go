@@ -51,7 +51,7 @@ func (s *HealthCheck) Execute() {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error acquiring lock lb.")
 		return
 	}
-	logg.Log.Info().Caller().Ctx(ctx).Msg("Obtained lock Daily investments sync up")
+	logg.Log.Info().Caller().Ctx(ctx).Msg("Obtained lock Daily account health sync up")
 
 	defer lock.Release(ctx)
 	hc, err := s.healthCycle.FindLatest(ctx)
