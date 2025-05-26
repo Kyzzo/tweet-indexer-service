@@ -13,7 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const Collection = "twittterprofiles"
+const Collection = "twitterprofiles"
 
 type Repository interface {
 	UpdateOrInsert(ctx context.Context, usr *twitterTypes.FollowingUser) error
