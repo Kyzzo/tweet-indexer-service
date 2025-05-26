@@ -304,7 +304,7 @@ func (repo *MongoRepository) FindByIsCryptoPagination(ctx context.Context, page,
 }
 
 func (repo *MongoRepository) FinbdByCryptoAndTracking(ctx context.Context, isCrypto, isTracking bool) ([]*twitterTypes.FollowingUser, error) {
-	filter := bson.M{"is_crypto": isCrypto, "is_tracking": isTracking}
+	filter := bson.M{"is_crypto": isCrypto, "tracking": isTracking}
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, nil)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding users by isCrypto and isTracking.")
@@ -334,7 +334,7 @@ func (repo *MongoRepository) FinbdByCryptoAndTrackingPagination(ctx context.Cont
 		opts.SetLimit(size)
 	}
 
-	filter := bson.M{"is_crypto": isCrypto, "is_tracking": isTracking}
+	filter := bson.M{"is_crypto": isCrypto, "tracking": isTracking}
 	var users []*twitterTypes.FollowingUser
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, opts)
 	if err != nil {
@@ -351,7 +351,7 @@ func (repo *MongoRepository) FinbdByCryptoAndTrackingPagination(ctx context.Cont
 		}
 		users = append(users, user)
 	}
-	totalCount, err := repo.GetCountByFilter(ctx, bson.M{"is_crypto": isCrypto, "is_tracking": isTracking})
+	totalCount, err := repo.GetCountByFilter(ctx, bson.M{"is_crypto": isCrypto, "tracking": isTracking})
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +361,7 @@ func (repo *MongoRepository) FinbdByCryptoAndTrackingPagination(ctx context.Cont
 }
 
 func (repo *MongoRepository) FindByIsTracking(ctx context.Context, isTracking bool) ([]*twitterTypes.FollowingUser, error) {
-	filter := bson.M{"is_tracking": isTracking}
+	filter := bson.M{"tracking": isTracking}
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, nil)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding users by isTracking.")
@@ -391,7 +391,7 @@ func (repo *MongoRepository) FindByIsTrackingPagination(ctx context.Context, pag
 		opts.SetLimit(size)
 	}
 
-	filter := bson.M{"is_tracking": isTracking}
+	filter := bson.M{"tracking": isTracking}
 	var users []*twitterTypes.FollowingUser
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, opts)
 	if err != nil {
@@ -408,7 +408,7 @@ func (repo *MongoRepository) FindByIsTrackingPagination(ctx context.Context, pag
 		}
 		users = append(users, user)
 	}
-	totalCount, err := repo.GetCountByFilter(ctx, bson.M{"is_tracking": isTracking})
+	totalCount, err := repo.GetCountByFilter(ctx, bson.M{"tracking": isTracking})
 	if err != nil {
 		return nil, err
 	}
