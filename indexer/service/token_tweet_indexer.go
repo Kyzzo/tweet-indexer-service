@@ -214,6 +214,10 @@ func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitter
 		logg.Log.Error().Caller().Ctx(ctx).Msg("HandleTweetEvent received a nil tweet")
 		return
 	}
+	if tweet.ID == "" {
+		logg.Log.Error().Caller().Ctx(ctx).Msg("HandleTweetEvent received a tweet with empty ID")
+		return
+	}
 
 	tweetEvent := mapper.MapTweetToEvent(tweet)
 	//Check if tweet already exists

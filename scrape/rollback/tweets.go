@@ -231,6 +231,14 @@ func TweetsPipeline(
 		go func() {
 			defer wgHandlers.Done()
 			for tj := range tweetJobs {
+				if tj.tweet == nil {
+					logg.Log.Error().
+						Caller().
+						Ctx(ctx).
+						Str("username", tj.username).
+						Msg("Received nil tweet in handler")
+					continue
+				}
 				handleTweet(ctx, tj.tweet)
 			}
 		}()
