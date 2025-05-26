@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -71,7 +72,17 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			log.Error().Msgf("Grok API health check failed with status code: %d", resp.StatusCode)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Grok API health check failed"})
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to read response body from Grok API")
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body from Grok API", "details": err.Error()})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error":       "Grok API health check failed",
+				"status_code": resp.StatusCode,
+				"details":     string(body),
+			})
 			return
 		}
 
