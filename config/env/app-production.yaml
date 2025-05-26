@@ -1,11 +1,11 @@
 app: tweet-indexer-service
 # config/env/production.yaml
 Stream:
-  Kafka:
-    Brokers:
+  kafka:
+    brokers:
       - kafka-jkb-do-user-15967845-0.k.db.ondigitalocean.com:9092
-    UsePrivate: true
-    UseSASL:    false
+    usePrivate: true
+    useSASL:    false
 
 
 memory:
