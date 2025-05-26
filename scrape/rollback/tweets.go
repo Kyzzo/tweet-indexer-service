@@ -9,7 +9,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	cache "github.com/jeetdotso/tweet-indexer-service/cache"
-	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser"
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	twitterAPI "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api"
@@ -166,7 +165,7 @@ func TweetsPipeline(
 	retryDelay time.Duration,
 	svc dummyaccount.Service,
 	handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo),
-	syncLatestToCheckPoint func(ctx context.Context, user twitteruser.User) time.Time,
+	syncLatestToCheckPoint func(ctx context.Context, user twitterTypes.TrackedUser) time.Time,
 ) {
 	type userJob struct {
 		username string

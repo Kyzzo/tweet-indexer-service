@@ -18,3 +18,31 @@ type User struct {
 func (usr *User) GetID() any {
 	return usr.ID
 }
+
+type TrackedUser struct {
+	ID           string    `bson:"_id" json:"id"`
+	UserId       string    `bson:"user_id" json:"user_id"`
+	UserName     string    `bson:"user_name" json:"user_name"`
+	Handle       string    `bson:"handle" json:"handle"`
+	ProfileImg   string    `bson:"profile_img" json:"profile_img"`
+	ProfileImgS3 string    `bson:"profile_img_s3" json:"profile_img_s3"`
+	Followers    int       `json:"follower_count" bson:"follower_count"`
+	Following    int       `json:"following_count" bson:"following_count"`
+	Verified     bool      `bson:"verified" json:"verified"`
+	CreatedAt    time.Time `bson:"created_at" json:"created_at"`
+	UpdatedAt    time.Time `bson:"updated_at" json:"updated_at"`
+}
+
+func (u *TrackedUser) ToTwitterFollowingUser() *FollowingUser {
+	return &FollowingUser{
+		ID:         u.ID,
+		UserName:   u.UserName,
+		Handle:     u.Handle,
+		ProfileImg: u.ProfileImg,
+		Followers:  u.Followers,
+		Following:  u.Following,
+		Verified:   u.Verified,
+		IsCrypto:   true, // Default value, can be set later
+		Tracking:   true, // Default value, can be set later
+	}
+}
