@@ -62,7 +62,7 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 		resp, err := http.Get(url)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to get health check from Grok API")
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get health check from Grok API"})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get health check from Grok API", "details": err.Error()})
 			return
 		}
 		defer resp.Body.Close()
