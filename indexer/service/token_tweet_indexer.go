@@ -94,6 +94,7 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 			cache.UpdateUserID(user.Handle, user.ID)
 			usersToSync = append(usersToSync, *user.TOTwitterUser())
 		}
+		logg.Log.Info().Caller().Ctx(ctx).Msgf("Syncing %d users in pod %s (ordinal %d/%d)", len(usersToSync), podName, ordinal, reps)
 		err = ti.Sync(ctx, usersToSync)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error syncing tweets.")
