@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -58,7 +59,9 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 	})
 	r.POST("/public/indexer/grok/health", func(ctx *gin.Context) {
 		//call the health check function for grok
-		url := cfg.Services.GrokAPIServices.Host + "/health"
+		url := fmt.Sprintf("http://%s/health", cfg.Services.GrokAPIServices.Host)
+		// e.g. if Host was "grok-py:9090", url becomes "http://grok-py:9090/health"
+
 		resp, err := http.Get(url)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to get health check from Grok API")
