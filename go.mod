@@ -8,6 +8,7 @@ require (
 	github.com/PuerkitoBio/goquery v1.10.2
 	github.com/bogdanfinn/fhttp v0.5.36
 	github.com/bogdanfinn/tls-client v1.8.0
+	github.com/bsm/redislock v0.9.4
 	github.com/gin-gonic/gin v1.10.0
 	github.com/mattn/go-colorable v0.1.14
 	github.com/redis/go-redis/v9 v9.7.1
