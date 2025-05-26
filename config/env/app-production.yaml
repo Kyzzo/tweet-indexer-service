@@ -33,7 +33,7 @@ services:
       host: https://www.jeet.so/api/irys
       bearertoken: jeet irys next api temp auth
     grokapiservices:
-      host: grok-py
+      host: grok-py:9090
 
 server:
   port: 9090
