@@ -81,6 +81,8 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
 			continue
 		}
+		logg.Log.Info().Caller().Ctx(ctx).Msgf("Found %d users to sync", len(users))
+
 		chunkSize := (len(users) + reps - 1) / reps
 		start := ordinal * chunkSize
 		end := start + chunkSize
