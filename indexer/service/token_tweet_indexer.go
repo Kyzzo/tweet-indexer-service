@@ -224,7 +224,7 @@ func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitter
 	}
 
 	tweetEvent := mapper.MapTweetToEvent(tweet)
-	if tweetEvent.CreatedAt.Before(time.Now().Add(-time.Minute * 15)) {
+	if tweetEvent.CreatedAt.Before(time.Now().Add(-time.Hour)) {
 		logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", tweetEvent.ID).Msg("Tweet event is too old, skipping.")
 	}
 	//Check if tweet already exists
