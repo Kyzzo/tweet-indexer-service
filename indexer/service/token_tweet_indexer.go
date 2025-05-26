@@ -2,124 +2,111 @@ package service
 
 import (
 	"context"
+	"log"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jeetdotso/tweet-indexer-service/cache"
 	"github.com/jeetdotso/tweet-indexer-service/config"
 	"github.com/jeetdotso/tweet-indexer-service/connection/proto/grpcclient"
-	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser"
-	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser/saas"
-	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser/user"
-	"github.com/jeetdotso/tweet-indexer-service/cycle"
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/mapper"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/model"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/repository"
-	"github.com/jeetdotso/tweet-indexer-service/list"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 	"github.com/jeetdotso/tweet-indexer-service/scrape/rollback"
+	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 )
 
-var (
-	handleScrapeTokenGroup   sync.Mutex
-	hanldeRollbackTokenGroup sync.Mutex
-
-	// TOPIC_CON = fmt.Sprintf("%s.%s", stream.StreamTweetPrefixTopic, TOPIC_NAME)
+const (
+	MAX_THREADS  = 20
+	TOPIC_NAME   = "monitor"
+	LIVE_KEY     = "live"     // used to indicate live scraping in the topic
+	ROLLBACK_KEY = "rollback" // used to indicate rollback scraping in the topic
 )
 
 type TokenTweetIndexer struct {
 	tweetRepo      repository.TweetEventRepository
-	cycleSvc       cycle.Service
+	twtPrf         twitterprofile.Service
 	checkpointRepo repository.UserCheckPointRepository
-	// producer       stream.Producer
-	dummSvc dummyaccount.Service
-	grokSvc GrokIndexer
-	listSvc list.ListRepository
-	saasSvc saas.SassUserService
-	accSvc  user.TwitteruserService
+	twtProfile     twitterprofile.Service
+	dummSvc        dummyaccount.Service
+	grokSvc        GrokIndexer
 }
 
 func NewTokenTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap, sassIndx SaasIndexer) TokenTweetIndexer {
 	tweetRepo := repository.NewTweetIndexRepo(conn)
 	checkpointRepo := repository.NewUserCheckPointRepository(conn)
+	twtPrf := twitterprofile.NewUserService(conn, &cfg)
 	dummSvc := dummyaccount.NewSeleniumService(conn, &cfg)
-	cycleSvc := cycle.NewCycleService(conn, &cfg)
-	// producer := kafka.NewProducer(cfg.Stream, TOPIC_CON)
+	twtProfile := twitterprofile.NewUserService(conn, &cfg)
 	grokSvc := NewGrokIndexer(cfg, conn, dummSvc, sassIndx)
-	saasCli := saas.NewSassUserService(grpcconn, cfg.Services)
-	listSvc := list.NewListRepo(conn)
-	accSvc := user.NewTwitterUserService(grpcconn, cfg.Services)
 
 	return TokenTweetIndexer{
 		tweetRepo:      tweetRepo,
 		checkpointRepo: checkpointRepo,
-		// producer:       producer,
-		cycleSvc: cycleSvc,
-		dummSvc:  dummSvc,
-		saasSvc:  saasCli,
-		listSvc:  listSvc,
-		accSvc:   accSvc,
-		grokSvc:  grokSvc,
+		twtProfile:     twtProfile,
+		dummSvc:        dummSvc,
+		twtPrf:         twtPrf,
+		grokSvc:        grokSvc,
 	}
 }
 
-var trackedUsers = make(map[string]twitteruser.User) // Keeps track of monitored users
+var trackedUsers = make(map[string]twitterTypes.TrackedUser) // Keeps track of monitored users
 func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 	logg.Log.Info().Caller().Ctx(ctx).Msg("Starting tweet indexer service...")
 
 	for {
-		start := time.Now()
-		// users, err := ti.saasSvc.FindAllTracked(ctx)
-		// if err != nil {
-		// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
-		// 	continue
-		// }
+		startTime := time.Now()
 
-		// users, err := ti.listSvc.FindAll(ctx)
-		// if err != nil {
-		// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
-		// 	continue
-		// }
-		users, err := ti.accSvc.FindAllRawUsers(ctx)
+		podName := os.Getenv("POD_NAME") // e.g. "grok-py-1"
+		parts := strings.Split(podName, "-")
+		ordinal, err := strconv.Atoi(parts[len(parts)-1])
+		if err != nil {
+			log.Printf("invalid pod name %q: %v", podName, err)
+		}
+
+		// how many replicas total?
+		reps, err := strconv.Atoi(os.Getenv("REPLICAS")) // injected by Helm
+		if err != nil {
+			log.Printf("invalid REPLICAS: %v", err)
+		}
+		users, err := ti.twtPrf.GetAllTrackedUsers(ctx)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
 			continue
 		}
-		for _, user := range users {
-			cache.UpdateUserID(user.Handle, user.ID)
+		chunkSize := (len(users) + reps - 1) / reps
+		start := ordinal * chunkSize
+		end := start + chunkSize
+		if end > len(users) {
+			end = len(users)
 		}
-		// otherUsers2, err := ti.accSvc.FindAllRawUsers(ctx)
-		// if err != nil {
-		// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
-		// 	continue
-		// }
-		// users = append(users, otherUsers2[:10]...)
 
-		err = ti.Sync(ctx, users)
+		mySlice := users[start:end]
+		usersToSync := make([]twitterTypes.TrackedUser, 0, len(mySlice))
+		for _, user := range mySlice {
+			cache.UpdateUserID(user.Handle, user.ID)
+			usersToSync = append(usersToSync, *user.TOTwitterUser())
+		}
+		err = ti.Sync(ctx, usersToSync)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error syncing tweets.")
+			continue
 		}
 
-		// }
-		// break
-		logg.Log.Info().Caller().Ctx(ctx).Msg("Monitoring users for new tweets...")
-
-		// track.MonitorTweetsMultipleAccounts(ctx, trackableUser, min(MAX_THREADS, len(trackableUser)), ti.dummSvc, ti.HandleTweetEvent)
-
-		// if err = ti.cycleSvc.EndCycle(ctx); err != nil {
-		// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to end cycle.")
-		// }
-		logg.Log.Info().Caller().Ctx(ctx).Msgf("---------------------\nCycle completed in %s\n----------------", time.Since(start))
+		logg.Log.Info().Caller().Ctx(ctx).Msgf("---------------------\nCycle completed in %s\n----------------", time.Since(startTime))
 
 	}
 }
 
-// TODO: wait until utilized then return so scrape can continue
 // ✅ **Sync tweets for a list of users**
-func (ti TokenTweetIndexer) Sync(ctx context.Context, users []twitteruser.User) error {
+func (ti TokenTweetIndexer) Sync(ctx context.Context, users []twitterTypes.TrackedUser) error {
 	startTime := time.Now()
 	userToSync, err := ti.parallelCheckpoints(ctx, users, 10)
 	if err != nil {
@@ -128,18 +115,18 @@ func (ti TokenTweetIndexer) Sync(ctx context.Context, users []twitteruser.User) 
 	}
 
 	logg.Log.Info().Caller().Ctx(ctx).Msgf("-------------------------Sync completed in : %s", time.Since(startTime))
-	rollback.TweetsPipeline(ctx, userToSync, 80, 20, 2, 2*time.Second, ti.dummSvc, ti.HandleTweetEvent, ti.syncLatestToCheckPoint)
+	rollback.TweetsPipeline(ctx, userToSync, 60, 20, 2, 2*time.Second, ti.dummSvc, ti.HandleTweetEvent, ti.syncLatestToCheckPoint)
 	// sync tweets for users
 	return nil
 }
 
 func (ti TokenTweetIndexer) parallelCheckpoints(
 	ctx context.Context,
-	users []twitteruser.User,
+	users []twitterTypes.TrackedUser,
 	maxConcurrency int,
 ) (map[string]time.Time, error) {
 
-	type job struct{ user twitteruser.User }
+	type job struct{ user twitterTypes.TrackedUser }
 	type result struct {
 		user string
 		ts   time.Time
@@ -195,14 +182,14 @@ func (ti TokenTweetIndexer) parallelCheckpoints(
 	return out, nil
 }
 
-func (ti TokenTweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twitteruser.User) time.Time {
+func (ti TokenTweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twitterTypes.TrackedUser) time.Time {
 	twt, err := ti.tweetRepo.FindMostRecentByUserId(ctx, user.ID)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching user checkpoint")
 	}
 	if twt == nil || twt.ID == "" {
 		// fmt.Println("No tweets found for user, skipping checkpoint update: ", user.Handle)
-		return time.Now().Add(-time.Hour)
+		return time.Now().Add(-time.Minute * 5)
 	}
 	checkpoint := model.UserCheckPoint{
 		ID:                 user.ID,
@@ -215,13 +202,6 @@ func (ti TokenTweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twi
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating user checkpoint")
 		return twt.CreatedAt
 	}
-	// cache.UpdateTweet(user.Handle, &tracking.Tweet{
-	// 	URL:               parseUrl(user.Handle, twt.ID),
-	// 	ConversationIDStr: twt.ConversationID,
-	// 	FullText:          twt.Text,
-	// 	UserIDStr:         twt.UserID,
-	// 	CreatedAt:         twt.CreatedAt.String(),
-	// })
 	return twt.CreatedAt
 }
 
@@ -244,6 +224,9 @@ func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitter
 		// logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", tweetEvent.ID).Msg("Tweet event already exists.")
 		return
 	}
+	if exist.CreatedAt.Before(time.Now().Add(-time.Minute * 15)) {
+		logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", tweetEvent.ID).Msg("Tweet event is too old, skipping.")
+	}
 	go ti.streamTweet(ctx, tweetEvent)
 
 	// **Update User Checkpoint**
@@ -259,11 +242,6 @@ func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitter
 		logg.Log.Error().Caller().Err(err).Ctx(ctx).Msg("Error updating user checkpoint")
 	}
 
-	handleScrapeTokenGroup.Lock()
-	defer handleScrapeTokenGroup.Unlock()
-	if err = ti.cycleSvc.AddScrapedTweets(ctx); err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to add scraped tweets.")
-	}
 }
 
 func (ti TokenTweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet *twitterTypes.TweetInfo) {
@@ -285,13 +263,6 @@ func (ti TokenTweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet 
 	}
 	ti.streamRollbackTweet(ctx, tweetEvent)
 
-	hanldeRollbackTokenGroup.Lock()
-	defer hanldeRollbackTokenGroup.Unlock()
-	err = ti.cycleSvc.AddRollback(ctx)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to add rollback.")
-	}
-
 }
 
 func (ti TokenTweetIndexer) streamTweet(ctx context.Context, tweetEvent model.TweetEvent) {
@@ -302,21 +273,6 @@ func (ti TokenTweetIndexer) streamTweet(ctx context.Context, tweetEvent model.Tw
 	}
 
 	go ti.grokSvc.Start(ctx, &tweetEvent, nil)
-	// tweetProto := tweetEvent.ToProto()
-
-	// // Marshal to binary format
-	// b, err := proto.Marshal(tweetProto)
-	// if err != nil {
-	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
-	// 	return
-	// }
-	// // Produce message to Kafka
-	// if err = ti.producer.Produce([]byte(LIVE_KEY), b); err != nil {
-	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
-	// 	return
-	// }
-
-	// logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", tweetEvent.ID).Msg("Tweet event sent!")
 
 }
 func (ti TokenTweetIndexer) streamRollbackTweet(ctx context.Context, tweetEvent model.TweetEvent) {
@@ -325,22 +281,5 @@ func (ti TokenTweetIndexer) streamRollbackTweet(ctx context.Context, tweetEvent 
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to save tweet event.")
 		return
 	}
-
-	// go ti.grokSvc.Start(ctx, &tweetEvent, nil)
-	// tweetProto := tweetEvent.ToProto()
-
-	// // Marshal to binary format
-	// b, err := proto.Marshal(tweetProto)
-	// if err != nil {
-	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
-	// 	return
-	// }
-	// // Produce message to Kafka
-	// if err = ti.producer.Produce([]byte(ROLLBACK_KEY), b); err != nil {
-	// 	logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
-	// 	return
-	// }
-
-	// logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", tweetEvent.ID).Msg("Tweet event sent!")
 
 }
