@@ -1,4 +1,4 @@
-replicas: 3
+replicas: 2
 appName: tweet-indexer-service
 port: 9090
 grpcPort: 8080

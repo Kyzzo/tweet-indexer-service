@@ -103,6 +103,10 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 		}
 
 		logg.Log.Info().Caller().Ctx(ctx).Msgf("---------------------\nCycle completed in %s\n----------------", time.Since(startTime))
+		if time.Since(startTime) < 60*time.Second {
+			logg.Log.Info().Caller().Ctx(ctx).Msgf("Sleeping for %s", 10*time.Second-time.Since(startTime))
+			time.Sleep(10 * time.Second)
+		}
 
 	}
 }
