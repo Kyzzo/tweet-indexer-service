@@ -53,7 +53,7 @@ jobs:
 #            helm upgrade ${{ env.IMAGE_NAME }}-release
 #            --set image=${{ vars.DO_CONTAINER_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-staging
 #            --set env=staging
-#            --set host=api.jeet.sx
+#            --set host=jkbapi.staging.jeet.so
 #            --set mongo_uri='${{ secrets.MONGO_URI_STAGING }}'
 #            --set redis_password='${{ secrets.REDIS_PASSWORD_STAGING }}'
 #            --set twitter_token='${{ secrets.TWITTER_TOKEN_STAGING }}'
@@ -71,7 +71,7 @@ jobs:
             helm upgrade ${{ env.IMAGE_NAME }}-release
             --set image=registry.digitalocean.com/dealswap-registry/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-production
             --set env=production
-            --set host=api.jeet.so
+            --set host=jkbapi.app
             --set mongo_uri='${{ secrets.MONGO_URI_PRODUCTION }}'
             --set redis_password='${{ secrets.REDIS_PASSWORD_PRODUCTION }}'
             --set twitter_token='${{ secrets.TWITTER_TOKEN_PRODUCTION }}'

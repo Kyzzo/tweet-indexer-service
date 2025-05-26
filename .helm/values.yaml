@@ -9,7 +9,7 @@ healthCheckPath: /public/indexer/health
 env: "staging"
 
 host: jkbapi.app
-gateway: "istio-ingress/istio-gateway"
+gateway: "istio-system/istio-ingressgateway"
 
 #secrets - this should be override by ci
 mongo_uri: mongodb://localhost:27017
