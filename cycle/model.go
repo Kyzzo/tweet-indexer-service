@@ -65,3 +65,32 @@ func (sc *ScrapeCycle) EndCycle() {
 	sc.EndTime = time.Now()
 	sc.Status = Completed
 }
+
+type UpdateCycle struct {
+	ID primitive.ObjectID `bson:"_id"`
+}
+
+// /////////////////////////////////////Health Cycle///////////////////////////////////////
+type HealthCycle struct {
+	ID               primitive.ObjectID `bson:"_id"`
+	StartTime        time.Time          `bson:"start_time"`
+	EndTime          time.Time          `bson:"end_time"`
+	PreWorkingCount  int                `bson:"pre_working_count"`
+	PostWorkingCount int                `bson:"post_working_count"`
+}
+
+func (hc *HealthCycle) GetID() any {
+	return hc.ID
+}
+func NewHealthCycle(wokringCount int) *HealthCycle {
+	return &HealthCycle{
+		ID:              primitive.NewObjectID(),
+		StartTime:       time.Now(),
+		PreWorkingCount: wokringCount,
+	}
+}
+
+func (hc *HealthCycle) EndCycle(postWorkingCount int) {
+	hc.EndTime = time.Now()
+	hc.PostWorkingCount = postWorkingCount
+}

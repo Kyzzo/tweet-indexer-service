@@ -18,6 +18,11 @@ type Service interface {
 	AddRollback(ctx context.Context) error
 	AddScrapedTweets(ctx context.Context) error
 	EndCycle(ctx context.Context) error
+	//Health Cycle
+	FindHealthById(ctx context.Context, id primitive.ObjectID) (*HealthCycle, error)
+	FindLatestHealth(ctx context.Context) (*HealthCycle, error)
+	FindAllHealth(ctx context.Context) ([]*HealthCycle, error)
+	UpdateOrInsertHealth(ctx context.Context, pl *HealthCycle) error
 }
 
 var (
@@ -112,6 +117,43 @@ func (s *ServiceDefaultImpl) EndCycle(ctx context.Context) error {
 	err = s.UpdateOrInsert(ctx, cycle)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+//////////////////////////////////////////// Health Cycle ////////////////////////////////////
+func (s *ServiceDefaultImpl) FindHealthById(ctx context.Context, id primitive.ObjectID) (*HealthCycle, error) {
+	health, err := s.repo.FindHealthById(ctx, id)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding health cycle by id.")
+		return nil, err
+	}
+	return health, nil
+}
+
+func (s *ServiceDefaultImpl) FindLatestHealth(ctx context.Context) (*HealthCycle, error) {
+	health, err := s.repo.FindLatestHealth(ctx)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding latest health cycle.")
+		return nil, err
+	}
+	return health, nil
+}
+
+func (s *ServiceDefaultImpl) FindAllHealth(ctx context.Context) ([]*HealthCycle, error) {
+	health, err := s.repo.FindAllHealth(ctx)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all health cycles.")
+		return nil, err
+	}
+	return health, nil
+}
+
+func (s *ServiceDefaultImpl) UpdateOrInsertHealth(ctx context.Context, pl *HealthCycle) error {
+	err := s.repo.UpdateOrInsertHealth(ctx, pl)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating or inserting health cycle.")
+		 return err 
 	}
 	return nil
 }
