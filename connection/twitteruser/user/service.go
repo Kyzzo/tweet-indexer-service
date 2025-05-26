@@ -6,14 +6,14 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/config"
 	"github.com/jeetdotso/tweet-indexer-service/connection/proto/grpcclient"
 	"github.com/jeetdotso/tweet-indexer-service/connection/proto/grpctwitteruser"
-	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser"
+	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 )
 
 type TwitteruserService interface {
-	FindUserByTwitterHandle(ctx context.Context, twitterHandle string) (*twitteruser.User, error)
-	FindAllRawUsers(ctx context.Context) ([]twitteruser.User, error)
+	FindUserByTwitterHandle(ctx context.Context, twitterHandle string) (*twitterTypes.TrackedUser, error)
+	FindAllRawUsers(ctx context.Context) ([]twitterTypes.TrackedUser, error)
 	CheckHealth(ctx context.Context) error
-	FindUserById(ctx context.Context, id string) (*twitteruser.User, error)
+	FindUserById(ctx context.Context, id string) (*twitterTypes.TrackedUser, error)
 }
 type TwitteruserServiceImpl struct {
 	cfg     config.Services
@@ -27,7 +27,7 @@ func NewTwitterUserService(grpcconn *grpcclient.GrpcClientMap, cfg config.Servic
 	}
 }
 
-func (svc *TwitteruserServiceImpl) FindUserByTwitterHandle(ctx context.Context, twitterHandle string) (*twitteruser.User, error) {
+func (svc *TwitteruserServiceImpl) FindUserByTwitterHandle(ctx context.Context, twitterHandle string) (*twitterTypes.TrackedUser, error) {
 	//try from repo first
 	req := &grpctwitteruser.FindUserRequest{TwitterHandle: twitterHandle}
 	user, err := svc.acctCli.FindUserByTwitterHandle(ctx, req)
@@ -36,7 +36,7 @@ func (svc *TwitteruserServiceImpl) FindUserByTwitterHandle(ctx context.Context, 
 	}
 	var usr = user.GetUser()
 
-	var userBack = &twitteruser.User{
+	var userBack = &twitterTypes.TrackedUser{
 		ID:           usr.Id,
 		Handle:       usr.TwitterHandle,
 		UserId:       usr.Id,
@@ -54,15 +54,15 @@ func (svc *TwitteruserServiceImpl) FindUserByTwitterHandle(ctx context.Context, 
 
 }
 
-func (svc *TwitteruserServiceImpl) FindAllRawUsers(ctx context.Context) ([]twitteruser.User, error) {
+func (svc *TwitteruserServiceImpl) FindAllRawUsers(ctx context.Context) ([]twitterTypes.TrackedUser, error) {
 	//try from repo first
 	users, err := svc.acctCli.FindAllRawUsers(ctx, &grpctwitteruser.EmptyRequest{})
 	if err != nil {
 		return nil, err
 	}
-	var usersBack []twitteruser.User
+	var usersBack []twitterTypes.TrackedUser
 	for _, usr := range users.Users {
-		var user = &twitteruser.User{
+		var user = &twitterTypes.TrackedUser{
 			ID:           usr.Id,
 			Handle:       usr.TwitterHandle,
 			UserId:       usr.Id,
@@ -87,7 +87,7 @@ func (svc *TwitteruserServiceImpl) CheckHealth(ctx context.Context) error {
 
 }
 
-func (svc *TwitteruserServiceImpl) FindUserById(ctx context.Context, id string) (*twitteruser.User, error) {
+func (svc *TwitteruserServiceImpl) FindUserById(ctx context.Context, id string) (*twitterTypes.TrackedUser, error) {
 	//try from repo first
 	req := &grpctwitteruser.FindUserByIdRequest{Id: id}
 	user, err := svc.acctCli.FindUserById(ctx, req)
@@ -96,7 +96,7 @@ func (svc *TwitteruserServiceImpl) FindUserById(ctx context.Context, id string) 
 	}
 	var usr = user.GetUser()
 
-	var userBack = &twitteruser.User{
+	var userBack = &twitterTypes.TrackedUser{
 		ID:           usr.Id,
 		Handle:       usr.TwitterHandle,
 		UserId:       usr.Id,
