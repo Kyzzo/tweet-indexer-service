@@ -4,7 +4,7 @@ metadata:
   name: {{ .Values.appName }}-headless
 spec:
   selector:
-    app: {{ .Values.appName }}
+    app: {{ .Values.appName }}-headless
   ports:
     - protocol: TCP
       port: 80
