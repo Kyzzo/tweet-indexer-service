@@ -10,12 +10,12 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// TODO: change back to tweet.indexes
-const tweetIndexCollection = "tweet.iii"
+const tweetIndexCollection = "tweet.indexes"
 
 type TweetEventRepository interface {
 	SaveOrUpdate(ctx context.Context, blockIndex model.TweetEvent) (interface{}, error)
@@ -175,19 +175,21 @@ func (repo *mongoEventRepository) FindMostRecentByUserId(ctx context.Context, us
 }
 
 func (repo *mongoEventRepository) FindAllNoneGrok(ctx context.Context) ([]model.TweetEvent, error) {
+	threshold := primitive.NewDateTimeFromTime(time.Now().Add(-1 * time.Minute))
 	pipeline := mongo.Pipeline{
 		// stage 1
 		bson.D{{
 			Key: "$match",
-			Value: bson.D{{
-				"tweet_type", bson.D{{
+			Value: bson.D{
+				{"tweet_type", bson.D{{
 					"$nin", bson.A{
 						twitterTypes.Reply,
 						twitterTypes.Retweet,
 						twitterTypes.QuoteRetweet,
 					},
-				}},
-			}},
+				}}},
+				{"captured_at", bson.D{{"$lte", threshold}}},
+			},
 		}},
 		// stage 2
 		{{Key: "$lookup", Value: bson.D{
