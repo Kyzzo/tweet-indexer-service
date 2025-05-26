@@ -74,7 +74,7 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	proxy := nextProxy()
 	convId, err := gm.twitterAPI.CreateConversation(proxy)
 	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("proxy", proxy).Msg("Error creating Grok conversation.")
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("url", gm.twitterAPI.BaseURL).Str("proxy", proxy).Msg("Error creating Grok conversation.")
 		return
 	}
 
