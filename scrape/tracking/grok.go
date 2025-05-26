@@ -217,7 +217,7 @@ func (gm *GrokMonitor) GetResponseDeleted(ctx context.Context, tweet *model.Twee
 
 		convId, err := gm.twitterAPI.CreateConversation(proxy)
 		if err != nil {
-			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error creating Grok conversation.")
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("url", gm.twitterAPI.BaseURL).Msg("Error creating Grok conversation.")
 			return
 		}
 		convId = convId

@@ -51,13 +51,13 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 		c.JSON(http.StatusOK, gin.H{"response": "Tweet Indexer Health OK"})
 	})
 
-	r.POST("public/indexer/replay/:id", twtCtrl.ReplayEventsByID)
-	r.POST("public/indexer/replay", twtCtrl.ReplayEvents)
-	r.GET("public/indexer/health", func(c *gin.Context) {
+	r.POST("/public/indexer/replay/:id", twtCtrl.ReplayEventsByID)
+	r.POST("/public/indexer/replay", twtCtrl.ReplayEvents)
+	r.GET("/public/indexer/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"response": "Tweet indexer Health OK"})
 	})
 
-	r.POST("public/indexer/monitors/replay/:userId", twtCtrl.ReplayEventsByUser)
+	r.POST("/public/indexer/monitors/replay/:userId", twtCtrl.ReplayEventsByUser)
 
 	err := r.Run(":" + cfg.Server.Port)
 	if err != nil {
