@@ -1,9 +1,5 @@
 package twitterTypes
 
-import (
-	"github.com/jeetdotso/tweet-indexer-service/connection/twitteruser"
-)
-
 type FollowingUser struct {
 	ID         string `bson:"_id" json:"id"`
 	UserName   string `bson:"user_name" json:"user_name"`
@@ -20,8 +16,8 @@ func (f *FollowingUser) GetID() any {
 	return f.ID
 }
 
-func (f *FollowingUser) TOTwitterUser() *twitteruser.User {
-	return &twitteruser.User{
+func (f *FollowingUser) TOTwitterUser() *TrackedUser {
+	return &TrackedUser{
 		ID:           f.ID,
 		UserName:     f.UserName,
 		Handle:       f.Handle,
