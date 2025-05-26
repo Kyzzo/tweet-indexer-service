@@ -1,11 +1,12 @@
 app: tweet-indexer-service
-Kafka:
-  Brokers:
-    - kafka-jkb-do-user-15967845-0.k.db.ondigitalocean.com:9092
-  usePrivate: true   # (you’ll ignore SASL entirely)
-  useSasl:   false
-  username:  ""      # unused in private mode
-  password:  ""
+# config/env/production.yaml
+Stream:
+  Kafka:
+    Brokers:
+      - kafka-jkb-do-user-15967845-0.k.db.ondigitalocean.com:9092
+    UsePrivate: true
+    UseSASL:    false
+
 
 memory:
   redis:
