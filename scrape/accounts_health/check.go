@@ -101,17 +101,8 @@ func Check(ctx context.Context, maxThreads int, svc dummyaccount.Service, group 
 	wg.Wait()
 	close(sem)
 
-	suspensionRate := float64(suspendedCount) / float64(totalCount)
-
-	logg.Log.Info().Caller().Ctx(ctx).Float64("suspense rate", suspensionRate*100).Msg("Suspension Rate")
-	logg.Log.Info().Caller().Ctx(ctx).Int("suspended accounts", suspendedCount).Msg("Suspended Accounts")
-	logg.Log.Info().Caller().Ctx(ctx).Int("non authenticated accounts", nonAuthenticatedCount).Msg("Non Authenticated Accounts")
-	logg.Log.Info().Caller().Ctx(ctx).Int("not working accounts", notWorkingCount).Msg("Not Working Accounts")
-	logg.Log.Info().Caller().Ctx(ctx).Int("other accounts", OTHER_GROUPCount).Msg("Other Accounts")
-	logg.Log.Info().Caller().Ctx(ctx).Int("empty raw accounts", emptyRawCount).Msg("Empty Raw Accounts")
 	logg.Log.Info().Caller().Ctx(ctx).Int("working accounts", liveCount).Msg("Working Accounts")
 	logg.Log.Info().Caller().Ctx(ctx).Int("total accounts", totalCount).Msg("Total Accounts")
-	logg.Log.Info().Caller().Ctx(ctx).Msg("Check complete.")
 	suspendedCount = 0
 	liveCount = 0
 	totalCount = 0
