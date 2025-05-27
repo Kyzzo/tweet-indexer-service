@@ -96,28 +96,28 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 
 		resp, err := http.Get(url)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to get health check from Grok API")
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get health check from Grok API", "details": err.Error()})
+			log.Error().Err(err).Msg("Failed to get health check from Review API")
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get health check from Review API", "details": err.Error()})
 			return
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			log.Error().Msgf("Grok API health check failed with status code: %d", resp.StatusCode)
+			log.Error().Msgf("Review API health check failed with status code: %d", resp.StatusCode)
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to read response body from Grok API")
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body from Grok API", "details": err.Error()})
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body from Review API", "details": err.Error()})
 				return
 			}
 			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error":       "Grok API health check failed",
+				"error":       "Review API health check failed",
 				"status_code": resp.StatusCode,
 				"details":     string(body),
 			})
 			return
 		}
 
-		ctx.JSON(http.StatusOK, gin.H{"response": "Grok API Health OK"})
+		ctx.JSON(http.StatusOK, gin.H{"response": "Review API Health OK"})
 
 	})
 
