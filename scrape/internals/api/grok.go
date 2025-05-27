@@ -132,7 +132,7 @@ func (c *GrokClient) SendMessage(message, conversationID, model, proxy string, r
 
 // GetConversationHistory retrieves the message history for a conversation (this is not requirede or needed just added it, maybe for further use)
 func (c *GrokClient) GetConversationHistory(conversationID, proxy string) (string, error) {
-	url := fmt.Sprintf("%s/conversation_history?auth_token=%s&ct0=%s&conversation_id=%s",
+	url := fmt.Sprintf("%s/grok/conversation_history?auth_token=%s&ct0=%s&conversation_id=%s",
 		c.BaseURL, c.AuthToken, c.Ct0, conversationID)
 	if proxy != "" {
 		url += "&proxy=" + proxy

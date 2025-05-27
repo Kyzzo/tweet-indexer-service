@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -22,20 +20,20 @@ import (
 func main() {
 	//Load app config
 	var (
-		cfg  = config.Load("./config/env/")
-		conn = mongodb.NewConnection(&cfg.Persistence)
-		// grpcconn = grpcclient.NewClientMap(&cfg.Grpc.Clients)
+		cfg      = config.Load("./config/env/")
+		conn     = mongodb.NewConnection(&cfg.Persistence)
+		grpcconn = grpcclient.NewClientMap(&cfg.Grpc.Clients)
 	)
 
-	// ctx := context.Background()
+	ctx := context.Background()
 
-	// dummSvc := dummyaccount.NewSeleniumService(&conn, cfg)
-	// dummSvc.ResetAll(ctx)
+	dummSvc := dummyaccount.NewSeleniumService(&conn, cfg)
+	dummSvc.ResetAll(ctx)
 	// //Register Scrapes
-	// _, saasIdx := registerScrapes(ctx, *cfg, &conn, grpcconn)
+	_, saasIdx := registerScrapes(ctx, *cfg, &conn, grpcconn)
 
 	// //Register Schedulers
-	// go registerSchedulers(cfg, &conn, dummSvc, saasIdx)
+	go registerSchedulers(cfg, &conn, dummSvc, saasIdx)
 
 	//Register http endpoints
 	registerHttp(cfg, &conn)
@@ -58,68 +56,6 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 	r.GET("/public/indexer/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"response": "Tweet indexer Health OK"})
 	})
-	r.POST("/public/indexer/grok/health", func(ctx *gin.Context) {
-		//call the health check function for grok
-		url := fmt.Sprintf("http://%s/health", cfg.Services.GrokAPIServices.Host)
-		// e.g. if Host was "grok-py:9090", url becomes "http://grok-py:9090/health"
-
-		resp, err := http.Get(url)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to get health check from Grok API")
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get health check from Grok API", "details": err.Error()})
-			return
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			log.Error().Msgf("Grok API health check failed with status code: %d", resp.StatusCode)
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to read response body from Grok API")
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body from Grok API", "details": err.Error()})
-				return
-			}
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error":       "Grok API health check failed",
-				"status_code": resp.StatusCode,
-				"details":     string(body),
-			})
-			return
-		}
-
-		ctx.JSON(http.StatusOK, gin.H{"response": "Grok API Health OK"})
-
-	})
-	r.POST("/public/indexer/review/health", func(ctx *gin.Context) {
-		//call the health check function for grok
-		url := fmt.Sprintf("http://%s/health", "review-services/public/review")
-		// e.g. if Host was "grok-py:9090", url becomes "http://grok-py:9090/health"
-
-		resp, err := http.Get(url)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to get health check from Review API")
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get health check from Review API", "details": err.Error()})
-			return
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			log.Error().Msgf("Review API health check failed with status code: %d", resp.StatusCode)
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to read response body from Grok API")
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body from Review API", "details": err.Error()})
-				return
-			}
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error":       "Review API health check failed",
-				"status_code": resp.StatusCode,
-				"details":     string(body),
-			})
-			return
-		}
-
-		ctx.JSON(http.StatusOK, gin.H{"response": "Review API Health OK"})
-
-	})
 
 	r.POST("/public/indexer/monitors/replay/:userId", twtCtrl.ReplayEventsByUser)
 
@@ -132,8 +68,8 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap) ([]string, service.SaasIndexer) {
 	// deps
 	var (
-		saasIndexer       = service.NewSaasIndexer(cfg, conn)
-		tokenTweetIndexer = service.NewTokenTweetIndexer(cfg, conn, grpcconn, saasIndexer)
+		saasIndexer = service.NewSaasIndexer(cfg, conn)
+		// tokenTweetIndexer = service.NewTokenTweetIndexer(cfg, conn, grpcconn, saasIndexer)
 	)
 
 	var topicNames []string
@@ -141,7 +77,7 @@ func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.Mongo
 	topicNames = append(topicNames, saasIndexer.TopicName())
 
 	// start tweet indexer
-	go tokenTweetIndexer.Start(ctx)
+	// go tokenTweetIndexer.Start(ctx)
 
 	return topicNames, saasIndexer
 }
