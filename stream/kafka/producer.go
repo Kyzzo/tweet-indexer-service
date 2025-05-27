@@ -27,18 +27,20 @@ func NewProducer(cfg config.Stream, topic string) stream.Producer {
 func (p *Producer) Connect(cfg config.Stream, topic string) {
 	logg.Log.Info().
 		Msgf("Connecting to Kafka brokers (private, TLS only): %v", cfg.Kafka.Brokers)
-	// force TLS with InsecureSkipVerify
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-		MinVersion:         tls.VersionTLS12,
+		// force TLS with InsecureSkipVerify
+	var tlsCfg *tls.Config
+	if !cfg.Kafka.UsePrivate {
+		tlsCfg = &tls.Config{
+			InsecureSkipVerify: true, // for now, skip CA validation
+			MinVersion:         tls.VersionTLS12,
+		}
 	}
 
 	dialer := &kafka.Dialer{
 		Timeout:   10 * time.Second,
 		DualStack: true,
-		TLS:       tlsConfig,
+		TLS:       tlsCfg,
 	}
-
 	p.writer = kafka.NewWriter(kafka.WriterConfig{
 		Brokers:      cfg.Kafka.Brokers,
 		Topic:        topic,
