@@ -3,6 +3,8 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -30,9 +32,19 @@ func (p *Producer) Connect(cfg config.Stream, topic string) {
 
 	var tlsConfig *tls.Config
 	if cfg.Kafka.UsePrivate {
+		// create a root-CA pool
+		roots := x509.NewCertPool()
+		caPem, err := ioutil.ReadFile("/etc/ssl/certs/do-kafka-ca.pem")
+		if err != nil {
+			logg.Log.Error().Caller().Err(err).Msg("cannot load Kafka CA")
+		}
+		if !roots.AppendCertsFromPEM(caPem) {
+			logg.Log.Error().Caller().Msg("failed to parse any CA certs")
+		}
+
 		tlsConfig = &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: true, // ⚠️ only for dev!
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    roots,
 		}
 	}
 
