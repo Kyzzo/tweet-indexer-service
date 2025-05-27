@@ -30,8 +30,10 @@ func (p *Producer) Connect(cfg config.Stream, topic string) {
 
 	var tlsConfig *tls.Config
 	if cfg.Kafka.UsePrivate {
-		// if you ever use the public SASL_SSL listener you’d populate this
-		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		tlsConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true, // ⚠️ only for dev!
+		}
 	}
 
 	dialer := &kafka.Dialer{
