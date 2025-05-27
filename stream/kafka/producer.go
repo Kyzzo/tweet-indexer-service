@@ -28,13 +28,16 @@ func (p *Producer) Connect(cfg config.Stream, topic string) {
 	logg.Log.Info().
 		Msgf("Connecting to Kafka brokers (private, TLS only): %v", cfg.Kafka.Brokers)
 
-	// configure a TLS‐enabled dialer
+	var tlsConfig *tls.Config
+	if !cfg.Kafka.UsePrivate {
+		// if you ever use the public SASL_SSL listener you’d populate this
+		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
 	dialer := &kafka.Dialer{
 		Timeout:   10 * time.Second,
 		DualStack: true,
-		TLS: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
+		TLS:       tlsConfig,
 	}
 
 	// build the writer
