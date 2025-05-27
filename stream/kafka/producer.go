@@ -29,7 +29,7 @@ func (p *Producer) Connect(cfg config.Stream, topic string) {
 		Msgf("Connecting to Kafka brokers (private, TLS only): %v", cfg.Kafka.Brokers)
 
 	var tlsConfig *tls.Config
-	if !cfg.Kafka.UsePrivate {
+	if cfg.Kafka.UsePrivate {
 		// if you ever use the public SASL_SSL listener you’d populate this
 		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
