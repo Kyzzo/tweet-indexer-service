@@ -108,6 +108,7 @@ func (si *SaasIndexer) streamTweet(ctx context.Context, saasEvt model.SaasEvent)
 	if err = si.producer.Produce([]byte(LIVE_KEY), b); err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
 		return
+
 	}
 
 	logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", saasEvt.ID).Msg("Saas Tweet event sent!")
