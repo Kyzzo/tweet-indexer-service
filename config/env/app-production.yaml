@@ -3,7 +3,7 @@ app: tweet-indexer-service
 stream:
   kafka:
     brokers:
-      - kafka-jkb-do-user-15967845-0.k.db.ondigitalocean.com:25071
+      - kafka-jkb-do-user-15967845-0.k.db.ondigitalocean.com:25062
     usePrivate: false
     useSASL:    false
     userName: "doadmin"

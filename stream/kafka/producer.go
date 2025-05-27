@@ -31,7 +31,7 @@ func (p *Producer) Connect(cfg config.Stream, topic string) {
 	var tlsCfg *tls.Config
 	if !cfg.Kafka.UsePrivate {
 		tlsCfg = &tls.Config{
-			InsecureSkipVerify: true, // for now, skip CA validation
+			InsecureSkipVerify: true,
 			MinVersion:         tls.VersionTLS12,
 		}
 	}
