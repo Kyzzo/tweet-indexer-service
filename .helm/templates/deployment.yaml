@@ -20,15 +20,15 @@ spec:
     spec:
       volumes:
       - name: kafka-certs
-      secret:
-        secretName: kafka-certs
+        secret:
+          secretName: kafka-certs
       containers:
-        - name: {{ .Values.appName }}
-          image: {{ .Values.image }}
-          volumeMounts:
-          - name: kafka-certs
-            mountPath: /etc/kafka
-            readOnly: true
+      - name: {{ .Values.appName }}
+        image: {{ .Values.image }}
+        volumeMounts:
+        - name: kafka-certs
+          mountPath: /etc/kafka
+          readOnly: true
           env:
             - name: ENVIRONMENT
               value: {{ .Values.env }}
