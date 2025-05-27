@@ -3,6 +3,11 @@ kind: StatefulSet
 metadata:
   name: {{ .Values.appName }}-headless
 spec:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # if you ever need to control partitioned rollouts:
+      partition: 0
   serviceName: {{ .Values.appName }}-headless        # <- required for headless k8s DNS
   selector:
     matchLabels:
@@ -85,7 +90,4 @@ spec:
             timeoutSeconds: 1
             periodSeconds: 10
             failureThreshold: 3
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 50%
+
