@@ -4,8 +4,10 @@ stream:
   kafka:
     brokers:
       - kafka-jkb-do-user-15967845-0.k.db.ondigitalocean.com:25073
-    usePrivate: true
+    usePrivate: false
     useSASL:    false
+    userName: "doadmin"
+    password: "AVNS_vuJo18PP38Pqp8B4UKC "
 
 
 memory:

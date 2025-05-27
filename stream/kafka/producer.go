@@ -3,8 +3,6 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
-	"io/ioutil"
 	"time"
 
 	"github.com/segmentio/kafka-go"
@@ -29,23 +27,10 @@ func NewProducer(cfg config.Stream, topic string) stream.Producer {
 func (p *Producer) Connect(cfg config.Stream, topic string) {
 	logg.Log.Info().
 		Msgf("Connecting to Kafka brokers (private, TLS only): %v", cfg.Kafka.Brokers)
-
-	var tlsConfig *tls.Config
-	if cfg.Kafka.UsePrivate {
-		// create a root-CA pool
-		roots := x509.NewCertPool()
-		caPem, err := ioutil.ReadFile("/etc/ssl/certs/do-kafka-ca.pem")
-		if err != nil {
-			logg.Log.Error().Caller().Err(err).Msg("cannot load Kafka CA")
-		}
-		if !roots.AppendCertsFromPEM(caPem) {
-			logg.Log.Error().Caller().Msg("failed to parse any CA certs")
-		}
-
-		tlsConfig = &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			RootCAs:    roots,
-		}
+	// force TLS with InsecureSkipVerify
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		MinVersion:         tls.VersionTLS12,
 	}
 
 	dialer := &kafka.Dialer{
@@ -54,9 +39,8 @@ func (p *Producer) Connect(cfg config.Stream, topic string) {
 		TLS:       tlsConfig,
 	}
 
-	// build the writer
 	p.writer = kafka.NewWriter(kafka.WriterConfig{
-		Brokers:      cfg.Kafka.Brokers, // e.g. ["<your-host>:9092"]
+		Brokers:      cfg.Kafka.Brokers,
 		Topic:        topic,
 		Balancer:     &kafka.LeastBytes{},
 		BatchTimeout: 1 * time.Millisecond,
