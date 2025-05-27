@@ -3,9 +3,10 @@ kind: StatefulSet
 metadata:
   name: {{ .Values.appName }}-headless
 spec:
+  serviceName: {{ .Values.appName }}-headless        # <- required for headless k8s DNS
   selector:
     matchLabels:
-      app: {{ .Values.appName }}-headless
+      app: {{ .Values.appName }}
   replicas: {{ .Values.replicas }}
   template:
     metadata:
