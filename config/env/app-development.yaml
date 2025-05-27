@@ -11,5 +11,5 @@ persistence:
     cdnEndpoint: http://localhost:4566/static.jeet.cx
     forcePathStyle: true
   mongodb:
-    url: mongodb+srv://doadmin:pJm2980h5O17Xe3Z@jeet-mongodb-prod-data-cluster-92c595f7.mongo.ondigitalocean.com/admin?tls=true&authSource=admin&replicaSet=jeet-mongodb-prod-data-cluster
+    url: mongodb+srv://doadmin:Ye0P6c3ta8u5714A@mongodb-jkb-prod-0d6838e5.mongo.ondigitalocean.com/admin?tls=true&authSource=admin&replicaSet=mongodb-jkb-prod
     database: tweet-indexer

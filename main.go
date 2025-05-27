@@ -68,8 +68,8 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap) ([]string, service.SaasIndexer) {
 	// deps
 	var (
-		saasIndexer = service.NewSaasIndexer(cfg, conn)
-		// tokenTweetIndexer = service.NewTokenTweetIndexer(cfg, conn, grpcconn, saasIndexer)
+		saasIndexer       = service.NewSaasIndexer(cfg, conn)
+		tokenTweetIndexer = service.NewTokenTweetIndexer(cfg, conn, grpcconn, saasIndexer)
 	)
 
 	var topicNames []string
@@ -77,7 +77,7 @@ func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.Mongo
 	topicNames = append(topicNames, saasIndexer.TopicName())
 
 	// start tweet indexer
-	// go tokenTweetIndexer.Start(ctx)
+	go tokenTweetIndexer.Start(ctx)
 
 	return topicNames, saasIndexer
 }
