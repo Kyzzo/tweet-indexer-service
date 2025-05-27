@@ -42,7 +42,7 @@ func (p *Producer) Connect(cfg config.Stream, topic string) {
 	}
 
 	// 2) load & trust the CA
-	caPem, err := ioutil.ReadFile("/etc/kafka/ca-certificate.crt")
+	caPem, err := ioutil.ReadFile("/etc/kafka/ca.pem")
 	if err != nil {
 		logg.Log.Fatal().Err(err).Msg("could not load Kafka CA cert")
 	}
