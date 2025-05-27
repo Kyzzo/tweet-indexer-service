@@ -15,6 +15,7 @@ spec:
   replicas: {{ .Values.replicas }}
   template:
     metadata:
+      name: {{ .Values.appName }}-headless
       annotations:
         k8s.grafana.com/indexer: "true"
         k8s.grafana.com/metrics.path: "/public/indexer/metrics"
