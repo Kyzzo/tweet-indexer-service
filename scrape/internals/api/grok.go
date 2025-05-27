@@ -70,7 +70,7 @@ func (c *GrokClient) CreateConversation(proxy string) (string, error) {
 		Proxy:     proxy,
 	}
 
-	body, err := c.doRequest("POST", "/create_conversation", reqBody)
+	body, err := c.doRequest("POST", "/grok/create_conversation", reqBody)
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +114,7 @@ func (c *GrokClient) SendMessage(message, conversationID, model, proxy string, r
 		RawResponse:    rawResponse,
 	}
 
-	body, err := c.doRequest("POST", "/send_message", reqBody)
+	body, err := c.doRequest("POST", "/grok/send_message", reqBody)
 	if err != nil {
 		return "", "", err
 	}
@@ -159,7 +159,7 @@ func (c *GrokClient) GetConversationHistory(conversationID, proxy string) (strin
 
 // GenerateTransactionID generates an X-Client-Transaction ID (this is very important you can use it as util and et the x_transaction_id for any endpoint)
 func (c *GrokClient) GenerateTransactionID(method, path, proxy string) (string, error) {
-	url := fmt.Sprintf("%s/generate_transaction_id?auth_token=%s&ct0=%s&method=%s&path=%s",
+	url := fmt.Sprintf("%s/grok/generate_transaction_id?auth_token=%s&ct0=%s&method=%s&path=%s",
 		c.BaseURL, c.AuthToken, c.Ct0, method, path)
 	if proxy != "" {
 		url += "&proxy=" + proxy
