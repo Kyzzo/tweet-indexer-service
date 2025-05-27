@@ -17,9 +17,17 @@ spec:
       labels:
         app: {{ .Values.appName }}
     spec:
+      volumes:
+      - name: kafka-certs
+      secret:
+        secretName: kafka-certs
       containers:
         - name: {{ .Values.appName }}
           image: {{ .Values.image }}
+          volumeMounts:
+          - name: kafka-certs
+            mountPath: /etc/kafka
+            readOnly: true
           env:
             - name: ENVIRONMENT
               value: {{ .Values.env }}
@@ -72,7 +80,6 @@ spec:
             httpGet:
               path: {{ .Values.healthCheckPath }}
               port: {{ .Values.port }}
-            readinessProbe:
             initialDelaySeconds: 3
             timeoutSeconds: 1
             periodSeconds: 10

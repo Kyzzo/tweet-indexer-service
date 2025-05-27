@@ -3,9 +3,13 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"io/ioutil"
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/plain"
 
 	"github.com/jeetdotso/tweet-indexer-service/config"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
@@ -27,20 +31,51 @@ func NewProducer(cfg config.Stream, topic string) stream.Producer {
 func (p *Producer) Connect(cfg config.Stream, topic string) {
 	logg.Log.Info().
 		Msgf("Connecting to Kafka brokers (private, TLS only): %v", cfg.Kafka.Brokers)
-		// force TLS with InsecureSkipVerify
-	var tlsCfg *tls.Config
-	if !cfg.Kafka.UsePrivate {
-		tlsCfg = &tls.Config{
-			InsecureSkipVerify: true,
-			MinVersion:         tls.VersionTLS12,
+
+	// 1) load client cert + key
+	cert, err := tls.LoadX509KeyPair(
+		"/etc/kafka/user-access-certificate.crt",
+		"/etc/kafka/user-access-key.key",
+	)
+	if err != nil {
+		logg.Log.Fatal().Err(err).Msg("could not load Kafka client cert/key")
+	}
+
+	// 2) load & trust the CA
+	caPem, err := ioutil.ReadFile("/etc/kafka/ca-certificate.crt")
+	if err != nil {
+		logg.Log.Fatal().Err(err).Msg("could not load Kafka CA cert")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPem) {
+		logg.Log.Fatal().Msg("failed to parse CA certificate")
+	}
+
+	// 3) assemble tls.Config
+	tlsCfg := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      roots,
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	// 4) (optional) if you’re using SASL/PLAIN over SSL, configure the mechanism:
+	var mech sasl.Mechanism
+	if cfg.Kafka.UseSASL {
+		mech = plain.Mechanism{
+			Username: cfg.Kafka.Username,
+			Password: cfg.Kafka.Password,
 		}
 	}
 
+	// 5) build a Dialer
 	dialer := &kafka.Dialer{
-		Timeout:   10 * time.Second,
-		DualStack: true,
-		TLS:       tlsCfg,
+		Timeout:       10 * time.Second,
+		DualStack:     true,
+		TLS:           tlsCfg,
+		SASLMechanism: mech,
 	}
+
+	// 6) finally construct your writer
 	p.writer = kafka.NewWriter(kafka.WriterConfig{
 		Brokers:      cfg.Kafka.Brokers,
 		Topic:        topic,
