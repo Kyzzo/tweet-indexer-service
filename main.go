@@ -89,6 +89,37 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 		ctx.JSON(http.StatusOK, gin.H{"response": "Grok API Health OK"})
 
 	})
+	r.POST("/public/indexer/review/health", func(ctx *gin.Context) {
+		//call the health check function for grok
+		url := fmt.Sprintf("http://%s/health", "review-services/public/review")
+		// e.g. if Host was "grok-py:9090", url becomes "http://grok-py:9090/health"
+
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to get health check from Grok API")
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get health check from Grok API", "details": err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			log.Error().Msgf("Grok API health check failed with status code: %d", resp.StatusCode)
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Error().Err(err).Msg("Failed to read response body from Grok API")
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body from Grok API", "details": err.Error()})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error":       "Grok API health check failed",
+				"status_code": resp.StatusCode,
+				"details":     string(body),
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{"response": "Grok API Health OK"})
+
+	})
 
 	r.POST("/public/indexer/monitors/replay/:userId", twtCtrl.ReplayEventsByUser)
 
