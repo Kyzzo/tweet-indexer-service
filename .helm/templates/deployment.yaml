@@ -5,7 +5,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: {{ .Values.appName }}
+      app: {{ .Values.appName }}-headless
   replicas: {{ .Values.replicas }}
   template:
     metadata:
