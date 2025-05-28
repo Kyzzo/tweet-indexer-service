@@ -84,5 +84,5 @@ func (s *HealthCheck) Execute() {
 }
 
 func (c *HealthCheck) Expression() string {
-	return "@every 24h"
+	return "@daily" // equivalent to "0 0 * * *"
 }
