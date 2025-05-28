@@ -67,6 +67,7 @@ func (s *GrokRetyImpl) Execute() {
 	if len(twts) == 0 {
 		return
 	}
+	logg.Log.Info().Caller().Ctx(ctx).Int("count", len(twts)).Msg("Found tweets to retry grok")
 	sem := make(chan struct{}, min(SCHEDULER_THREADS, len(twts)))
 	var wg sync.WaitGroup
 
