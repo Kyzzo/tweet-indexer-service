@@ -21,6 +21,7 @@ type GrokEventRepository interface {
 	FindAllByID(ctx context.Context, id string) (*model.GrokEvent, error)
 	FindAll(ctx context.Context) ([]model.GrokEvent, error)
 	FindMostRecentByUserId(ctx context.Context, userId string) (*model.GrokEvent, error)
+	GrokTrueSince(ctx context.Context, since time.Time) (int64, error)
 }
 type mongoGrokEventRepository struct {
 	conn    *mongodb.MongoConnection
@@ -156,4 +157,14 @@ func (repo *mongoGrokEventRepository) FindMostRecentByUserId(ctx context.Context
 	}
 
 	return &tweetIdx, nil
+}
+
+func (repo *mongoGrokEventRepository) GrokTrueSince(ctx context.Context, since time.Time) (int64, error) {
+	filter := bson.M{"is_shill": true, "created_at": bson.M{"$gte": since}}
+	count, err := repo.conn.Datastore.Collection(grokIndexCollection).CountDocuments(ctx, filter)
+	if err != nil {
+		logg.Log.Error().Err(err).Msg("Error counting grok true since.")
+		return 0, err
+	}
+	return count, nil
 }
