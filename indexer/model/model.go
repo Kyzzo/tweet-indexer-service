@@ -164,3 +164,23 @@ func (tw *TweetEvent) GetMediaUrls() []string {
 
 	return urls
 }
+
+type Following struct {
+	ID          string    `json:"id" bson:"_id"`
+	UserID      string    `json:"user_id" bson:"user_id"`
+	FollowingID string    `json:"following_id" bson:"following_id"`
+	UpdatedAt   time.Time `json:"updated_at" bson:"updated_at"`
+}
+
+func NewFollowing(userID, followingID string) *Following {
+	return &Following{
+		ID:          fmt.Sprintf("%s_%s", userID, followingID),
+		UserID:      userID,
+		FollowingID: followingID,
+		UpdatedAt:   time.Now(),
+	}
+}
+
+func (f *Following) GetID() any {
+	return f.ID
+}
