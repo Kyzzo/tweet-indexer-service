@@ -2,11 +2,12 @@ package twitterprofile
 
 import (
 	"context"
+	"time"
 
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	"github.com/jeetdotso/tweet-indexer-service/persistence"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
-	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
+	twiterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -16,36 +17,37 @@ import (
 const Collection = "twitterprofiles"
 
 type Repository interface {
-	UpdateOrInsert(ctx context.Context, usr *twitterTypes.FollowingUser) error
-	FindByUserId(ctx context.Context, twitterId string) (*twitterTypes.FollowingUser, error)
-	FindUserByTwitterHandle(ctx context.Context, twitterHandle string) (*twitterTypes.FollowingUser, error)
-	FindUserByName(ctx context.Context, usrName string) (*twitterTypes.FollowingUser, error)
-	FindAllUsersPagination(ctx context.Context, page, size int64, asc bool, sortedType string) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error)
-	FindAllUsersPaginationByNameOrTwitterHandle(ctx context.Context, page, size int64, name string) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error)
+	UpdateOrInsert(ctx context.Context, usr *TwitterProfile) error
+	FindByUserId(ctx context.Context, twitterId string) (*TwitterProfile, error)
+	FindUserByTwitterHandle(ctx context.Context, twitterHandle string) (*TwitterProfile, error)
+	FindUserByName(ctx context.Context, usrName string) (*TwitterProfile, error)
+	FindAllUsersPagination(ctx context.Context, page, size int64, asc bool, sortedType string) (*persistence.Pagination[[]*TwitterProfile], error)
+	FindAllUsersPaginationByNameOrTwitterHandle(ctx context.Context, page, size int64, name string) (*persistence.Pagination[[]*TwitterProfile], error)
 	FindTotalCount(ctx context.Context) (int64, error)
-	FindAllUsers(ctx context.Context) ([]*twitterTypes.FollowingUser, error)
-	FindUsersByIds(ctx context.Context, userIds ...string) ([]*twitterTypes.FollowingUser, error)
-	FindByIsCrypto(ctx context.Context, isCrypto bool) ([]*twitterTypes.FollowingUser, error)
-	FindByIsCryptoPagination(ctx context.Context, page, size int64, isCrypto bool) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error)
-	FinbdByCryptoAndTracking(ctx context.Context, isCrypto, isTracking bool) ([]*twitterTypes.FollowingUser, error)
-	FinbdByCryptoAndTrackingPagination(ctx context.Context, page, size int64, isCrypto, isTracking bool) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error)
-	FindByIsTracking(ctx context.Context, isTracking bool) ([]*twitterTypes.FollowingUser, error)
-	FindByIsTrackingPagination(ctx context.Context, page, size int64, isTracking bool) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error)
+	FindAllUsers(ctx context.Context) ([]*TwitterProfile, error)
+	FindUsersByIds(ctx context.Context, userIds ...string) ([]*TwitterProfile, error)
+	FindByIsCrypto(ctx context.Context, isCrypto bool) ([]*TwitterProfile, error)
+	FindByIsCryptoPagination(ctx context.Context, page, size int64, isCrypto bool) (*persistence.Pagination[[]*TwitterProfile], error)
+	FindByCryptoAndTracking(ctx context.Context, isCrypto, isTracking bool) ([]*TwitterProfile, error)
+	FindByCryptoAndTrackingPagination(ctx context.Context, page, size int64, isCrypto, isTracking bool) (*persistence.Pagination[[]*TwitterProfile], error)
+	FindByIsTracking(ctx context.Context, isTracking bool) ([]*TwitterProfile, error)
+	FindByIsTrackingPagination(ctx context.Context, page, size int64, isTracking bool) (*persistence.Pagination[[]*TwitterProfile], error)
+	UpsertTwitterProfile(ctx context.Context, u twiterTypes.FollowingUser) error
 }
 type MongoRepository struct {
 	conn    *mongodb.MongoConnection
-	absrepo *persistence.AbstractMongoRepository[*twitterTypes.FollowingUser]
+	absrepo *persistence.AbstractMongoRepository[*TwitterProfile]
 }
 
 func NewRepository(conn *mongodb.MongoConnection) Repository {
-	absrepo := persistence.NewAbstractRepository[*twitterTypes.FollowingUser](conn, Collection)
+	absrepo := persistence.NewAbstractRepository[*TwitterProfile](conn, Collection)
 	return &MongoRepository{
 		conn:    conn,
 		absrepo: absrepo,
 	}
 }
 
-func (repo *MongoRepository) UpdateOrInsert(ctx context.Context, usr *twitterTypes.FollowingUser) error {
+func (repo *MongoRepository) UpdateOrInsert(ctx context.Context, usr *TwitterProfile) error {
 	err := repo.absrepo.InsertOrUpdate(usr)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating or inserting user.")
@@ -54,9 +56,9 @@ func (repo *MongoRepository) UpdateOrInsert(ctx context.Context, usr *twitterTyp
 	return nil
 }
 
-func (repo *MongoRepository) FindByUserId(ctx context.Context, twitterId string) (*twitterTypes.FollowingUser, error) {
+func (repo *MongoRepository) FindByUserId(ctx context.Context, twitterId string) (*TwitterProfile, error) {
 	filter := bson.M{"_id": twitterId}
-	var usr twitterTypes.FollowingUser
+	var usr TwitterProfile
 	res := repo.conn.Datastore.Collection(repo.absrepo.Collection).FindOne(ctx, filter)
 	if err := res.Decode(&usr); err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -68,9 +70,9 @@ func (repo *MongoRepository) FindByUserId(ctx context.Context, twitterId string)
 	return &usr, nil
 }
 
-func (repo *MongoRepository) FindUserByTwitterHandle(ctx context.Context, twitterHandle string) (*twitterTypes.FollowingUser, error) {
+func (repo *MongoRepository) FindUserByTwitterHandle(ctx context.Context, twitterHandle string) (*TwitterProfile, error) {
 	filter := bson.M{"handle": twitterHandle}
-	var usr twitterTypes.FollowingUser
+	var usr TwitterProfile
 	res := repo.conn.Datastore.Collection(repo.absrepo.Collection).FindOne(ctx, filter)
 	if err := res.Decode(&usr); err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -99,9 +101,9 @@ func (repo *MongoRepository) GetCountByFilter(ctx context.Context, filter bson.M
 	return count, nil
 }
 
-func (repo *MongoRepository) FindUserByName(ctx context.Context, usrName string) (*twitterTypes.FollowingUser, error) {
+func (repo *MongoRepository) FindUserByName(ctx context.Context, usrName string) (*TwitterProfile, error) {
 	filter := bson.M{"handle": usrName}
-	var usr twitterTypes.FollowingUser
+	var usr TwitterProfile
 	res := repo.conn.Datastore.Collection(repo.absrepo.Collection).FindOne(ctx, filter)
 	if err := res.Decode(&usr); err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -114,7 +116,7 @@ func (repo *MongoRepository) FindUserByName(ctx context.Context, usrName string)
 	return &usr, nil
 }
 
-func (repo *MongoRepository) FindAllUsersPagination(ctx context.Context, page, size int64, asc bool, sortedType string) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error) {
+func (repo *MongoRepository) FindAllUsersPagination(ctx context.Context, page, size int64, asc bool, sortedType string) (*persistence.Pagination[[]*TwitterProfile], error) {
 	opts := options.Find()
 	if page == 1 {
 		opts.SetSkip(0)
@@ -130,7 +132,7 @@ func (repo *MongoRepository) FindAllUsersPagination(ctx context.Context, page, s
 		opts.SetSort(bson.D{{sortedType, 1}})
 
 	}
-	var users []*twitterTypes.FollowingUser
+	var users []*TwitterProfile
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, bson.M{}, opts)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all users.")
@@ -138,7 +140,7 @@ func (repo *MongoRepository) FindAllUsersPagination(ctx context.Context, page, s
 	}
 
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding usr.")
@@ -151,11 +153,11 @@ func (repo *MongoRepository) FindAllUsersPagination(ctx context.Context, page, s
 		return nil, err
 	}
 
-	pag := persistence.NewPagination[[]*twitterTypes.FollowingUser](page, size, users, totalCount)
+	pag := persistence.NewPagination[[]*TwitterProfile](page, size, users, totalCount)
 	return pag, nil
 }
 
-func (repo *MongoRepository) FindAllUsersPaginationByNameOrTwitterHandle(ctx context.Context, page, size int64, name string) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error) {
+func (repo *MongoRepository) FindAllUsersPaginationByNameOrTwitterHandle(ctx context.Context, page, size int64, name string) (*persistence.Pagination[[]*TwitterProfile], error) {
 	opts := options.Find()
 	if page == 1 {
 		opts.SetSkip(0)
@@ -172,7 +174,7 @@ func (repo *MongoRepository) FindAllUsersPaginationByNameOrTwitterHandle(ctx con
 	}
 	//TODO: sort methodaligy
 
-	var users []*twitterTypes.FollowingUser
+	var users []*TwitterProfile
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filters, opts)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all users.")
@@ -180,7 +182,7 @@ func (repo *MongoRepository) FindAllUsersPaginationByNameOrTwitterHandle(ctx con
 	}
 
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding usr.")
@@ -193,13 +195,13 @@ func (repo *MongoRepository) FindAllUsersPaginationByNameOrTwitterHandle(ctx con
 		return nil, err
 	}
 
-	pag := persistence.NewPagination[[]*twitterTypes.FollowingUser](page, size, users, totalCount)
+	pag := persistence.NewPagination[[]*TwitterProfile](page, size, users, totalCount)
 	return pag, nil
 }
 
-func (repo *MongoRepository) FindAllUsers(ctx context.Context) ([]*twitterTypes.FollowingUser, error) {
+func (repo *MongoRepository) FindAllUsers(ctx context.Context) ([]*TwitterProfile, error) {
 	filter := bson.M{}
-	var users []*twitterTypes.FollowingUser
+	var users []*TwitterProfile
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, nil)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all users.")
@@ -207,7 +209,7 @@ func (repo *MongoRepository) FindAllUsers(ctx context.Context) ([]*twitterTypes.
 	}
 
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding usr.")
@@ -218,7 +220,7 @@ func (repo *MongoRepository) FindAllUsers(ctx context.Context) ([]*twitterTypes.
 	return users, nil
 }
 
-func (repo *MongoRepository) FindUsersByIds(ctx context.Context, userIds ...string) ([]*twitterTypes.FollowingUser, error) {
+func (repo *MongoRepository) FindUsersByIds(ctx context.Context, userIds ...string) ([]*TwitterProfile, error) {
 	filter := bson.M{"_id": bson.M{"$in": userIds}}
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, nil)
 	if err != nil {
@@ -226,9 +228,9 @@ func (repo *MongoRepository) FindUsersByIds(ctx context.Context, userIds ...stri
 		return nil, err
 	}
 
-	userMap := make(map[string]*twitterTypes.FollowingUser)
+	userMap := make(map[string]*TwitterProfile)
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user.")
@@ -237,7 +239,7 @@ func (repo *MongoRepository) FindUsersByIds(ctx context.Context, userIds ...stri
 		userMap[user.ID] = user
 	}
 
-	var orderedUsers []*twitterTypes.FollowingUser
+	var orderedUsers []*TwitterProfile
 	for _, id := range userIds {
 		if user, exists := userMap[id]; exists {
 			orderedUsers = append(orderedUsers, user)
@@ -246,17 +248,18 @@ func (repo *MongoRepository) FindUsersByIds(ctx context.Context, userIds ...stri
 	return orderedUsers, nil
 }
 
-func (repo *MongoRepository) FindByIsCrypto(ctx context.Context, isCrypto bool) ([]*twitterTypes.FollowingUser, error) {
+func (repo *MongoRepository) FindByIsCrypto(ctx context.Context, isCrypto bool) ([]*TwitterProfile, error) {
 	filter := bson.M{"is_crypto": isCrypto}
-	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, nil)
+	sortedType := "captured_at"
+	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, options.Find().SetSort(bson.D{{sortedType, -1}}))
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding users by isCrypto.")
 		return nil, err
 	}
 
-	var users []*twitterTypes.FollowingUser
+	var users []*TwitterProfile
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user.")
@@ -267,7 +270,7 @@ func (repo *MongoRepository) FindByIsCrypto(ctx context.Context, isCrypto bool) 
 	return users, nil
 }
 
-func (repo *MongoRepository) FindByIsCryptoPagination(ctx context.Context, page, size int64, isCrypto bool) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error) {
+func (repo *MongoRepository) FindByIsCryptoPagination(ctx context.Context, page, size int64, isCrypto bool) (*persistence.Pagination[[]*TwitterProfile], error) {
 	opts := options.Find()
 	if page == 1 {
 		opts.SetSkip(0)
@@ -276,9 +279,10 @@ func (repo *MongoRepository) FindByIsCryptoPagination(ctx context.Context, page,
 		opts.SetSkip((page - 1) * size)
 		opts.SetLimit(size)
 	}
-
+	sortedType := "captured_at"
+	opts.SetSort(bson.D{{sortedType, -1}})
 	filter := bson.M{"is_crypto": isCrypto}
-	var users []*twitterTypes.FollowingUser
+	var users []*TwitterProfile
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, opts)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding users by isCrypto.")
@@ -286,7 +290,7 @@ func (repo *MongoRepository) FindByIsCryptoPagination(ctx context.Context, page,
 	}
 
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user.")
@@ -299,11 +303,11 @@ func (repo *MongoRepository) FindByIsCryptoPagination(ctx context.Context, page,
 		return nil, err
 	}
 
-	pag := persistence.NewPagination[[]*twitterTypes.FollowingUser](page, size, users, totalCount)
+	pag := persistence.NewPagination[[]*TwitterProfile](page, size, users, totalCount)
 	return pag, nil
 }
 
-func (repo *MongoRepository) FinbdByCryptoAndTracking(ctx context.Context, isCrypto, isTracking bool) ([]*twitterTypes.FollowingUser, error) {
+func (repo *MongoRepository) FindByCryptoAndTracking(ctx context.Context, isCrypto, isTracking bool) ([]*TwitterProfile, error) {
 	filter := bson.M{"is_crypto": isCrypto, "tracking": isTracking}
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, nil)
 	if err != nil {
@@ -311,9 +315,9 @@ func (repo *MongoRepository) FinbdByCryptoAndTracking(ctx context.Context, isCry
 		return nil, err
 	}
 
-	var users []*twitterTypes.FollowingUser
+	var users []*TwitterProfile
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user.")
@@ -324,7 +328,7 @@ func (repo *MongoRepository) FinbdByCryptoAndTracking(ctx context.Context, isCry
 	return users, nil
 }
 
-func (repo *MongoRepository) FinbdByCryptoAndTrackingPagination(ctx context.Context, page, size int64, isCrypto, isTracking bool) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error) {
+func (repo *MongoRepository) FindByCryptoAndTrackingPagination(ctx context.Context, page, size int64, isCrypto, isTracking bool) (*persistence.Pagination[[]*TwitterProfile], error) {
 	opts := options.Find()
 	if page == 1 {
 		opts.SetSkip(0)
@@ -333,9 +337,10 @@ func (repo *MongoRepository) FinbdByCryptoAndTrackingPagination(ctx context.Cont
 		opts.SetSkip((page - 1) * size)
 		opts.SetLimit(size)
 	}
-
+	sortedType := "captured_at"
+	opts.SetSort(bson.D{{sortedType, -1}})
 	filter := bson.M{"is_crypto": isCrypto, "tracking": isTracking}
-	var users []*twitterTypes.FollowingUser
+	var users []*TwitterProfile
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, opts)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding users by isCrypto and isTracking.")
@@ -343,7 +348,7 @@ func (repo *MongoRepository) FinbdByCryptoAndTrackingPagination(ctx context.Cont
 	}
 
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user.")
@@ -356,11 +361,11 @@ func (repo *MongoRepository) FinbdByCryptoAndTrackingPagination(ctx context.Cont
 		return nil, err
 	}
 
-	pag := persistence.NewPagination[[]*twitterTypes.FollowingUser](page, size, users, totalCount)
+	pag := persistence.NewPagination[[]*TwitterProfile](page, size, users, totalCount)
 	return pag, nil
 }
 
-func (repo *MongoRepository) FindByIsTracking(ctx context.Context, isTracking bool) ([]*twitterTypes.FollowingUser, error) {
+func (repo *MongoRepository) FindByIsTracking(ctx context.Context, isTracking bool) ([]*TwitterProfile, error) {
 	filter := bson.M{"tracking": isTracking}
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, nil)
 	if err != nil {
@@ -368,9 +373,9 @@ func (repo *MongoRepository) FindByIsTracking(ctx context.Context, isTracking bo
 		return nil, err
 	}
 
-	var users []*twitterTypes.FollowingUser
+	var users []*TwitterProfile
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user.")
@@ -381,7 +386,7 @@ func (repo *MongoRepository) FindByIsTracking(ctx context.Context, isTracking bo
 	return users, nil
 }
 
-func (repo *MongoRepository) FindByIsTrackingPagination(ctx context.Context, page, size int64, isTracking bool) (*persistence.Pagination[[]*twitterTypes.FollowingUser], error) {
+func (repo *MongoRepository) FindByIsTrackingPagination(ctx context.Context, page, size int64, isTracking bool) (*persistence.Pagination[[]*TwitterProfile], error) {
 	opts := options.Find()
 	if page == 1 {
 		opts.SetSkip(0)
@@ -392,7 +397,9 @@ func (repo *MongoRepository) FindByIsTrackingPagination(ctx context.Context, pag
 	}
 
 	filter := bson.M{"tracking": isTracking}
-	var users []*twitterTypes.FollowingUser
+	sortedType := "captured_at"
+	opts.SetSort(bson.D{{sortedType, -1}})
+	var users []*TwitterProfile
 	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, opts)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding users by isTracking.")
@@ -400,7 +407,7 @@ func (repo *MongoRepository) FindByIsTrackingPagination(ctx context.Context, pag
 	}
 
 	for cursor.Next(ctx) {
-		var user *twitterTypes.FollowingUser
+		var user *TwitterProfile
 		err = cursor.Decode(&user)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user.")
@@ -413,6 +420,37 @@ func (repo *MongoRepository) FindByIsTrackingPagination(ctx context.Context, pag
 		return nil, err
 	}
 
-	pag := persistence.NewPagination[[]*twitterTypes.FollowingUser](page, size, users, totalCount)
+	pag := persistence.NewPagination[[]*TwitterProfile](page, size, users, totalCount)
 	return pag, nil
+}
+
+func (repo *MongoRepository) UpsertTwitterProfile(ctx context.Context, u twiterTypes.FollowingUser) error {
+	now := time.Now().UTC()
+
+	filter := bson.D{{Key: "_id", Value: u.ID}}
+	update := bson.D{
+		// always overwrite these fields from the API
+		{Key: "$set", Value: bson.D{
+			{Key: "user_name", Value: u.UserName},
+			{Key: "handle", Value: u.Handle},
+			{Key: "profile_img", Value: u.ProfileImg},
+			{Key: "follower_count", Value: u.Followers},
+			{Key: "following_count", Value: u.Following},
+			{Key: "verified", Value: u.Verified},
+			// bump your updated_at every time
+			{Key: "updated_at", Value: now},
+		}},
+		// only on insert, set these once:
+		{Key: "$setOnInsert", Value: bson.D{
+			{Key: "captured_at", Value: now},
+			{Key: "is_crypto", Value: false},
+			{Key: "tracking", Value: false},
+		}},
+	}
+
+	opts := options.Update().SetUpsert(true)
+	_, err := repo.conn.Datastore.
+		Collection(repo.absrepo.Collection).
+		UpdateOne(ctx, filter, update, opts)
+	return err
 }
