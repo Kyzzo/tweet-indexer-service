@@ -68,10 +68,10 @@ func (s *GrokRetyImpl) Execute() {
 		logg.Log.Error().Err(err).Msg("Error finding all none grok tweets")
 		return
 	}
+	logg.Log.Info().Caller().Ctx(ctx).Int("count", len(twts)).Msg("Found tweets to retry grok")
 	if len(twts) == 0 {
 		return
 	}
-	logg.Log.Info().Caller().Ctx(ctx).Int("count", len(twts)).Msg("Found tweets to retry grok")
 	if err := s.scr.AddGrokError(ctx, len(twts)); err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error adding grok error to scrape cycle")
 	}
