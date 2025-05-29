@@ -54,7 +54,7 @@ func (s *HealthCheck) Execute() {
 	logg.Log.Info().Caller().Ctx(ctx).Msg("Obtained lock Daily account health sync up")
 
 	defer lock.Release(ctx)
-	hc, err := s.healthCycle.FindLatest(ctx)
+	hc, err := s.healthCycle.FindLatestHealth(ctx)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding latest health cycle.")
 		return
@@ -63,6 +63,7 @@ func (s *HealthCheck) Execute() {
 		logg.Log.Info().Caller().Ctx(ctx).Msg("Health cycle already exists for today, skipping.")
 		return
 	}
+
 	sels, err := s.dummySvc.FindAllByGroup(ctx, dummyaccount.WORKING_GROUP)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all dummy accounts for health check.")

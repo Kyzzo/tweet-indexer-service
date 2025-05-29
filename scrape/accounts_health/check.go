@@ -87,7 +87,16 @@ func Check(ctx context.Context, maxThreads int, svc dummyaccount.Service, group 
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium accounts.")
 		return
 	}
+	if len(selAccounts) == 0 {
+		logg.Log.Info().Caller().Ctx(ctx).Msg("No accounts found for health check.")
+		return
+	}
+
 	for i, u := range selAccounts {
+		if u == nil {
+			logg.Log.Warn().Caller().Ctx(ctx).Int("index", i).Msg("Skipping nil account.")
+			continue
+		}
 		ctl := util.CreateBackgroundContextFromExisting(ctx)
 		wg.Add(1)
 		sem <- struct{}{}
