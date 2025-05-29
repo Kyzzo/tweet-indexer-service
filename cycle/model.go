@@ -10,6 +10,7 @@ type ScrapeCycle struct {
 	ID                 primitive.ObjectID     `bson:"_id"`
 	StartTime          time.Time              `bson:"start_time"`
 	CycleType          string                 `bson:"cycle_type"`
+	PodsRunning        int                    `bson:"pods_running"`
 	EndTime            time.Time              `bson:"end_time"`
 	TotalUsers         int                    `bson:"total_users"`
 	UniqueUsers        int                    `bson:"unique_users"`
@@ -34,6 +35,10 @@ type CycleType string
 const (
 	KOL_INDEXER         CycleType = "kol_indexer"
 	TOKEN_GROUP_INDEXER CycleType = "daily_scrape_data"
+
+	//////Following Cycle Types
+	DailyUpdate   CycleType = "daily_update"
+	MonthlyUpdate CycleType = "monthly_update"
 )
 
 var StatusMap = map[int]string{
@@ -96,4 +101,27 @@ func NewHealthCycle(wokringCount int) *HealthCycle {
 func (hc *HealthCycle) EndCycle(postWorkingCount int) {
 	hc.EndTime = time.Now()
 	hc.PostWorkingCount = postWorkingCount
+}
+
+// /////////////////////////Following Cycle///////////////////////////////////////
+type FollowingCycle struct {
+	ID                      primitive.ObjectID `bson:"_id"`
+	StartTime               time.Time          `bson:"start_time"`
+	EndTime                 time.Time          `bson:"end_time"`
+	TotalInfluencerAccounts int                `bson:"total_influencer_accounts"`
+	TotalUserAccounts       int                `bson:"total_user_accounts"`
+	Status                  int                `bson:"status"`
+	CycleType               CycleType          `bson:"cycle_type"`
+}
+
+func (fc *FollowingCycle) GetID() any {
+	return fc.ID
+}
+func NewFollowingCycle(ct CycleType) *FollowingCycle {
+	return &FollowingCycle{
+		ID:        primitive.NewObjectID(),
+		StartTime: time.Now(),
+		CycleType: ct,
+		Status:    Running,
+	}
 }

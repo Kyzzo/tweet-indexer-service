@@ -12,9 +12,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const Collection = "cycle.scrape"
+const (
+	Collection = "cycle.scrape"
 
-const HealthCollection = "cycle.health"
+	HealthCollection    = "cycle.health"
+	FollowingCollection = "cycle.following"
+)
 
 type Repository interface {
 	UpdateOrInsert(ctx context.Context, pl *ScrapeCycle) error
@@ -26,20 +29,30 @@ type Repository interface {
 	FindLatestHealth(ctx context.Context) (*HealthCycle, error)
 	FindAllHealth(ctx context.Context) ([]*HealthCycle, error)
 	UpdateOrInsertHealth(ctx context.Context, pl *HealthCycle) error
+	// Following Cycle
+	FindFollowingLatest(ctx context.Context, ct CycleType) (*FollowingCycle, error)
+	CreateNewFollowingCycle(ctx context.Context, ct CycleType) error
+	FindFollowingById(ctx context.Context, id primitive.ObjectID) (*FollowingCycle, error)
+	UpdateOrInsertFollowing(ctx context.Context, pl *FollowingCycle) error
+	FindAllFollowing(ctx context.Context) ([]*FollowingCycle, error)
+	FindAllFollowingByType(ctx context.Context, ct CycleType) ([]*FollowingCycle, error)
 }
 type MongoRepository struct {
-	conn          *mongodb.MongoConnection
-	absrepo       *persistence.AbstractMongoRepository[*ScrapeCycle]
-	absHealthRepo *persistence.AbstractMongoRepository[*HealthCycle]
+	conn             *mongodb.MongoConnection
+	absrepo          *persistence.AbstractMongoRepository[*ScrapeCycle]
+	absHealthRepo    *persistence.AbstractMongoRepository[*HealthCycle]
+	absFollowingRepo *persistence.AbstractMongoRepository[*FollowingCycle]
 }
 
 func NewRepository(conn *mongodb.MongoConnection) Repository {
 	absrepo := persistence.NewAbstractRepository[*ScrapeCycle](conn, Collection)
 	absHealthRepo := persistence.NewAbstractRepository[*HealthCycle](conn, HealthCollection)
+	absFollowingRepo := persistence.NewAbstractRepository[*FollowingCycle](conn, FollowingCollection)
 	return &MongoRepository{
-		conn:          conn,
-		absrepo:       absrepo,
-		absHealthRepo: absHealthRepo,
+		conn:             conn,
+		absrepo:          absrepo,
+		absHealthRepo:    absHealthRepo,
+		absFollowingRepo: absFollowingRepo,
 	}
 }
 
@@ -138,4 +151,99 @@ func (repo *MongoRepository) UpdateOrInsertHealth(ctx context.Context, pl *Healt
 		return err
 	}
 	return nil
+}
+
+// /////////////////////////// Following Cycle ////////////////////////////////////
+func (repo *MongoRepository) FindFollowingLatest(ctx context.Context, ct CycleType) (*FollowingCycle, error) {
+	opts := options.FindOne().SetSort(bson.D{{"start_time", -1}})
+	filter := bson.M{"cycle_type": ct}
+	var cycle FollowingCycle
+	res := repo.conn.Datastore.Collection(repo.absFollowingRepo.Collection).FindOne(ctx, filter, opts)
+	if err := res.Decode(&cycle); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding following cycle.")
+		return nil, err
+	}
+	return &cycle, nil
+}
+
+func (repo *MongoRepository) CreateNewFollowingCycle(ctx context.Context, ct CycleType) error {
+	cycle := NewFollowingCycle(ct)
+	err := repo.absFollowingRepo.InsertOrUpdate(cycle)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error creating new following cycle.")
+		return err
+	}
+	return nil
+}
+
+func (repo *MongoRepository) FindFollowingById(ctx context.Context, id primitive.ObjectID) (*FollowingCycle, error) {
+	filter := bson.M{"_id": id}
+	var cycle FollowingCycle
+	res := repo.conn.Datastore.Collection(repo.absFollowingRepo.Collection).FindOne(ctx, filter)
+	if err := res.Decode(&cycle); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding following cycle.")
+		return nil, err
+	}
+	return &cycle, nil
+}
+
+func (repo *MongoRepository) UpdateOrInsertFollowing(ctx context.Context, pl *FollowingCycle) error {
+	err := repo.absFollowingRepo.InsertOrUpdate(pl)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating or inserting following cycle.")
+		return err
+	}
+	return nil
+}
+
+func (repo *MongoRepository) FindAllFollowing(ctx context.Context) ([]*FollowingCycle, error) {
+	filter := bson.D{}
+	opts := options.Find().SetSort(bson.D{{"start_time", -1}})
+	cursor, err := repo.conn.Datastore.Collection(repo.absFollowingRepo.Collection).Find(ctx, filter, opts)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all following cycles.")
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var followingCycles []*FollowingCycle
+	for cursor.Next(ctx) {
+		var cycle FollowingCycle
+		if err := cursor.Decode(&cycle); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding following cycle.")
+			return nil, err
+		}
+		followingCycles = append(followingCycles, &cycle)
+	}
+
+	return followingCycles, nil
+}
+
+func (repo *MongoRepository) FindAllFollowingByType(ctx context.Context, ct CycleType) ([]*FollowingCycle, error) {
+	filter := bson.M{"cycle_type": ct}
+	opts := options.Find().SetSort(bson.D{{"start_time", -1}})
+	cursor, err := repo.conn.Datastore.Collection(repo.absFollowingRepo.Collection).Find(ctx, filter, opts)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all following cycles by type.")
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var followingCycles []*FollowingCycle
+	for cursor.Next(ctx) {
+		var cycle FollowingCycle
+		if err := cursor.Decode(&cycle); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding following cycle by type.")
+			return nil, err
+		}
+		followingCycles = append(followingCycles, &cycle)
+	}
+
+	return followingCycles, nil
 }

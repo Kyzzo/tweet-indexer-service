@@ -23,6 +23,13 @@ type Service interface {
 	FindLatestHealth(ctx context.Context) (*HealthCycle, error)
 	FindAllHealth(ctx context.Context) ([]*HealthCycle, error)
 	UpdateOrInsertHealth(ctx context.Context, pl *HealthCycle) error
+	// Following Cycle
+	FindFollowingLatest(ctx context.Context, ct CycleType) (*FollowingCycle, error)
+	CreateNewFollowingCycle(ctx context.Context, ct CycleType) (*FollowingCycle, error)
+	FindFollowingById(ctx context.Context, id primitive.ObjectID) (*FollowingCycle, error)
+	UpdateOrInsertFollowing(ctx context.Context, pl *FollowingCycle) error
+	FindAllFollowing(ctx context.Context) ([]*FollowingCycle, error)
+	FindAllFollowingByType(ctx context.Context, ct CycleType) ([]*FollowingCycle, error)
 }
 
 var (
@@ -154,4 +161,60 @@ func (s *ServiceDefaultImpl) UpdateOrInsertHealth(ctx context.Context, pl *Healt
 		return err
 	}
 	return nil
+}
+
+// /// ////////////////////////////////////////// Following Cycle ////////////////////////////////////
+func (s *ServiceDefaultImpl) FindFollowingLatest(ctx context.Context, ct CycleType) (*FollowingCycle, error) {
+	cycle, err := s.repo.FindFollowingLatest(ctx, ct)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding latest following cycle.")
+		return nil, err
+	}
+	return cycle, nil
+}
+
+func (s *ServiceDefaultImpl) CreateNewFollowingCycle(ctx context.Context, ct CycleType) (*FollowingCycle, error) {
+	cycle := NewFollowingCycle(ct)
+	err := s.repo.UpdateOrInsertFollowing(ctx, cycle)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error creating new following cycle.")
+		return nil, err
+	}
+	return cycle, nil
+}
+
+func (s *ServiceDefaultImpl) FindFollowingById(ctx context.Context, id primitive.ObjectID) (*FollowingCycle, error) {
+	cycle, err := s.repo.FindFollowingById(ctx, id)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding following cycle by id.")
+		return nil, err
+	}
+	return cycle, nil
+}
+
+func (s *ServiceDefaultImpl) UpdateOrInsertFollowing(ctx context.Context, pl *FollowingCycle) error {
+	err := s.repo.UpdateOrInsertFollowing(ctx, pl)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating or inserting following cycle.")
+		return err
+	}
+	return nil
+}
+
+func (s *ServiceDefaultImpl) FindAllFollowing(ctx context.Context) ([]*FollowingCycle, error) {
+	following, err := s.repo.FindAllFollowing(ctx)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all following cycles.")
+		return nil, err
+	}
+	return following, nil
+}
+
+func (s *ServiceDefaultImpl) FindAllFollowingByType(ctx context.Context, ct CycleType) ([]*FollowingCycle, error) {
+	following, err := s.repo.FindAllFollowingByType(ctx, ct)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all following cycles by type.")
+		return nil, err
+	}
+	return following, nil
 }
