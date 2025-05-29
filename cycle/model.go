@@ -12,10 +12,13 @@ type ScrapeCycle struct {
 	CycleType          string                 `bson:"cycle_type"`
 	EndTime            time.Time              `bson:"end_time"`
 	TotalUsers         int                    `bson:"total_users"`
-	NewUsers           int                    `bson:"new_users"`
-	RemovedUsers       int                    `bson:"removed_users"`
-	TweetsScraped      int                    `bson:"tweets_scraped"`
-	RollbacksTriggered int                    `bson:"rollbacks_triggered"`
+	UniqueUsers        int                    `bson:"unique_users"`
+	TweetsScraped      int                    `bson:"tracked_tweets_scraped"`
+	NoneTrackedScraped int                    `bson:"none_tracked_scraped"`
+	GrokErrors         int                    `bson:"grok_errors"`
+	AvgGrokTime        float64                `bson:"avg_grok_time"`
+	AvgScrapeTime      float64                `bson:"avg_scrape_time"`
+	Shills             int                    `bson:"shills"`
 	Status             int                    `bson:"status"`
 	Metadata           map[string]interface{} `bson:"metadata"`
 }
@@ -30,13 +33,13 @@ type CycleType string
 
 const (
 	KOL_INDEXER         CycleType = "kol_indexer"
-	TOKEN_GROUP_INDEXER CycleType = "token_group_indexer"
+	TOKEN_GROUP_INDEXER CycleType = "daily_scrape_data"
 )
 
 var StatusMap = map[int]string{
-	Running:   "running",
-	Completed: "completed",
-	Failed:    "failed",
+	Running:   "RUNNING",
+	Completed: "COMPLETED",
+	Failed:    "FAILED",
 }
 
 func (sc *ScrapeCycle) GetStatus() string {
