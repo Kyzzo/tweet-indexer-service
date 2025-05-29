@@ -14,8 +14,8 @@ type Service interface {
 	UpdateOrInsert(ctx context.Context, pl *ScrapeCycle) error
 	FindById(ctx context.Context, id primitive.ObjectID) (*ScrapeCycle, error)
 	FindLatest(ctx context.Context) (*ScrapeCycle, error)
-	CreateNewCycle(ctx context.Context, totalUsers, removedUsers, newUsers int, ct CycleType) error
-	AddRollback(ctx context.Context) error
+	AddGrokError(ctx context.Context, errCount int) error
+	CreateNewCycle(ctx context.Context, ct CycleType) error
 	AddScrapedTweets(ctx context.Context) error
 	EndCycle(ctx context.Context) error
 	//Health Cycle
@@ -58,6 +58,21 @@ func (s *ServiceDefaultImpl) FindById(ctx context.Context, id primitive.ObjectID
 	return cycle, nil
 }
 
+func (s *ServiceDefaultImpl) AddGrokError(ctx context.Context, errCount int) error {
+	cycle, err := s.FindLatest(ctx)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding latest cycle.")
+		return err
+	}
+	cycle.GrokErrors += errCount
+	err = s.UpdateOrInsert(ctx, cycle)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating cycle with grok errors.")
+		return err
+	}
+	return nil
+}
+
 func (s *ServiceDefaultImpl) FindLatest(ctx context.Context) (*ScrapeCycle, error) {
 	cycle, err := s.repo.FindLatest(ctx)
 	if err != nil {
@@ -67,26 +82,9 @@ func (s *ServiceDefaultImpl) FindLatest(ctx context.Context) (*ScrapeCycle, erro
 	return cycle, nil
 }
 
-func (s *ServiceDefaultImpl) CreateNewCycle(ctx context.Context, totalUsers, removedUsers, newUsers int, ct CycleType) error {
+func (s *ServiceDefaultImpl) CreateNewCycle(ctx context.Context, ct CycleType) error {
 	cycle := NewScrapeCycle(ct)
-	cycle.TotalUsers = totalUsers
-	cycle.RemovedUsers = removedUsers
-	cycle.NewUsers = newUsers
 	err := s.UpdateOrInsert(ctx, cycle)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *ServiceDefaultImpl) AddRollback(ctx context.Context) error {
-	cycle, err := s.FindLatest(ctx)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding latest cycle.")
-		return err
-	}
-	cycle.RollbacksTriggered++
-	err = s.UpdateOrInsert(ctx, cycle)
 	if err != nil {
 		return err
 	}
@@ -121,7 +119,7 @@ func (s *ServiceDefaultImpl) EndCycle(ctx context.Context) error {
 	return nil
 }
 
-//////////////////////////////////////////// Health Cycle ////////////////////////////////////
+// ////////////////////////////////////////// Health Cycle ////////////////////////////////////
 func (s *ServiceDefaultImpl) FindHealthById(ctx context.Context, id primitive.ObjectID) (*HealthCycle, error) {
 	health, err := s.repo.FindHealthById(ctx, id)
 	if err != nil {
@@ -153,7 +151,7 @@ func (s *ServiceDefaultImpl) UpdateOrInsertHealth(ctx context.Context, pl *Healt
 	err := s.repo.UpdateOrInsertHealth(ctx, pl)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating or inserting health cycle.")
-		 return err 
+		return err
 	}
 	return nil
 }
