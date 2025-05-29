@@ -2,6 +2,9 @@ package scheduler
 
 import (
 	"context"
+	"log"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/bsm/redislock"
@@ -19,7 +22,7 @@ import (
 type ScrapeCycle struct {
 	locker      *redislock.Client
 	scrapeCycle cycle.Service
-	twtPrf      twitterprofile.Service
+	twtPrf      twitterprofile.Repository
 	twtRepo     repository.TweetEventRepository
 	grokRepo    repository.GrokEventRepository
 }
@@ -31,7 +34,7 @@ const (
 func NewScrapeCycleScheduler(cfg *config.Config, conn *mongodb.MongoConnection) scheduler.Scheduler {
 	locker := redislock.New(redis.NewClient(redis2.GetRedisOptions(cfg.Memory)))
 	scrapeCycle := cycle.NewCycleService(conn, cfg)
-	twtPrf := twitterprofile.NewUserService(conn, cfg)
+	twtPrf := twitterprofile.NewRepository(conn)
 	twtRepo := repository.NewTweetIndexRepo(conn)
 	grokRepo := repository.NewGrokIndexRepo(conn)
 	return &ScrapeCycle{
@@ -92,7 +95,11 @@ func (s *ScrapeCycle) Execute() {
 		}
 		sc.TweetsScraped = int(grokCount)
 		sc.NoneTrackedScraped = int(noneGrokCount)
-
+		reps, err := strconv.Atoi(os.Getenv("REPLICAS")) // injected by Helm
+		if err != nil {
+			log.Printf("invalid REPLICAS: %v", err)
+		}
+		sc.PodsRunning = reps
 		shillCount, err := s.grokRepo.GrokTrueSince(ctx, sc.StartTime)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching shill count.")
@@ -106,7 +113,7 @@ func (s *ScrapeCycle) Execute() {
 			return
 		}
 		sc.UniqueUsers = int(uniqueUsers)
-		totalUsers, err := s.twtPrf.GetAllTrackedUsers(ctx)
+		totalUsers, err := s.twtPrf.FindByIsTracking(ctx, true)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
 		}
