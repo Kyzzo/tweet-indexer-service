@@ -18,6 +18,14 @@ import (
 type FollowingMonitor struct {
 	twitterAPI *twitterAPI.TwitterClient
 }
+type accountJob struct {
+	id string
+}
+
+type followingJob struct {
+	sourceID  string
+	following twitterTypes.FollowingUser
+}
 
 func NewFollowingMonitor(ctx context.Context, svc dummyaccount.Service) (*FollowingMonitor, *dummyaccount.SelAccount, error) {
 	sel, err := svc.LogInToNextGroup(ctx, dummyaccount.WORKING_GROUP)
@@ -46,6 +54,331 @@ func (fm *FollowingMonitor) ExtractEntries(r *gjson.Result) []gjson.Result {
 		}
 	}
 	return nil
+}
+
+func MonitorSingleFollowingPagePipeline(
+	ctx context.Context,
+	accountIDs map[string]struct{},
+	fetcherCount int,
+	handlerCount int,
+	maxRetries int,
+	retryDelay time.Duration,
+	handleFollowing func(ctx context.Context, sourceID string, user twitterTypes.FollowingUser),
+	dummSvc dummyaccount.Service,
+) {
+	type accountJob struct {
+		id string
+	}
+
+	type followingJob struct {
+		sourceID  string
+		following twitterTypes.FollowingUser
+	}
+
+	userJobs := make(chan accountJob, fetcherCount*2)
+	followingJobs := make(chan followingJob, handlerCount*2)
+
+	var wgFetchers sync.WaitGroup
+	var wgHandlers sync.WaitGroup
+
+	// Worker pool
+	wgFetchers.Add(fetcherCount)
+	for i := 0; i < fetcherCount; i++ {
+		go func() {
+			defer wgFetchers.Done()
+			for job := range userJobs {
+				fm, selAcc, err := NewFollowingMonitor(ctx, dummSvc)
+				if err != nil {
+					logg.Log.Error().
+						Caller().
+						Ctx(ctx).
+						Err(err).
+						Str("id", job.id).
+						Msg("FollowingMonitor init failed")
+					continue
+				}
+
+				// Single fetch attempt
+				resp, err := fetchWithRetries(ctx, fm, job.id, "", 1, maxRetries, retryDelay)
+				if err != nil {
+					// Cleanup and continue to next job
+					if err := dummSvc.LogOut(ctx, selAcc.UserName); err != nil {
+						logg.Log.Error().
+							Err(err).
+							Str("username", selAcc.UserName).
+							Str("source_id", job.id).
+							Msg("logout failed")
+					}
+					continue
+				}
+
+				// Process entries
+				entries, _ := extractEntriesAndCursor(resp)
+				for _, e := range entries {
+					u := followingParsers.ParseFollowing(&e)
+					if u == nil || u.Handle == "" {
+						logg.Log.Error().
+							Str("id", job.id).
+							Msgf("failed to parse entry %s", e.Raw)
+						continue
+					}
+					followingJobs <- followingJob{
+						sourceID:  job.id,
+						following: *u,
+					}
+				}
+
+				// Cleanup
+				if err := dummSvc.LogOut(ctx, selAcc.UserName); err != nil {
+					logg.Log.Error().
+						Err(err).
+						Str("username", selAcc.UserName).
+						Str("source_id", job.id).
+						Msg("logout failed")
+				}
+			}
+		}()
+	}
+
+	// Handler pool
+	wgHandlers.Add(handlerCount)
+	for i := 0; i < handlerCount; i++ {
+		go func() {
+			defer wgHandlers.Done()
+			for job := range followingJobs {
+				handleFollowing(ctx, job.sourceID, job.following)
+			}
+		}()
+	}
+
+	// Producer
+	go func() {
+		for id := range accountIDs {
+			userJobs <- accountJob{id: id}
+		}
+		close(userJobs)
+	}()
+
+	// Shutdown coordination
+	go func() {
+		wgFetchers.Wait()
+		close(followingJobs)
+	}()
+
+	wgHandlers.Wait()
+}
+
+func MonitorFollowingsPipeline(
+	ctx context.Context,
+	accountIDs map[string]struct{},
+	fetcherCount int,
+	handlerCount int,
+	maxRetries int,
+	retryDelay time.Duration,
+	handleFollowing func(ctx context.Context, sourceID string, user twitterTypes.FollowingUser),
+	dummSvc dummyaccount.Service,
+) {
+
+	// Buffered channels for better throughput
+	accountJobs := make(chan accountJob, fetcherCount*2)
+	followingJobs := make(chan followingJob, handlerCount*2)
+
+	var wgFetchers sync.WaitGroup
+	var wgHandlers sync.WaitGroup
+
+	// —— 1) Fetcher worker pool ——
+	wgFetchers.Add(fetcherCount)
+	for i := 0; i < fetcherCount; i++ {
+		go func() {
+			defer wgFetchers.Done()
+
+			for job := range accountJobs {
+				processAccount(
+					ctx,
+					job,
+					accountJobs,
+					followingJobs,
+					maxRetries,
+					retryDelay,
+					dummSvc,
+				)
+			}
+		}()
+	}
+
+	// —— 2) Handler worker pool ——
+	wgHandlers.Add(handlerCount)
+	for i := 0; i < handlerCount; i++ {
+		go func() {
+			defer wgHandlers.Done()
+			for job := range followingJobs {
+				handleFollowing(ctx, job.sourceID, job.following)
+			}
+		}()
+	}
+
+	// —— 3) Producer ——
+	go func() {
+		defer close(accountJobs)
+		for id := range accountIDs {
+			select {
+			case accountJobs <- accountJob{id: id}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// —— 4) Shutdown coordination ——
+	go func() {
+		wgFetchers.Wait()
+		close(followingJobs)
+	}()
+
+	// —— 5) Wait for completion ——
+	wgHandlers.Wait()
+}
+
+func processAccount(
+	ctx context.Context,
+	job accountJob,
+	accountJobs chan<- accountJob,
+	followingJobs chan<- followingJob,
+	maxRetries int,
+	retryDelay time.Duration,
+	dummSvc dummyaccount.Service,
+) {
+	cursor := ""
+	batch := 1
+
+	fm, selAcc, err := NewFollowingMonitor(ctx, dummSvc)
+	if err != nil {
+		logg.Log.Error().
+			Caller().
+			Ctx(ctx).
+			Err(err).
+			Str("id", job.id).
+			Msg("FollowingMonitor creation failed")
+		return
+	}
+	defer cleanupAccount(ctx, dummSvc, selAcc.UserName, job.id)
+
+	for {
+		// Fetch with retries
+		resp, err := fetchWithRetries(ctx, fm, job.id, cursor, batch, maxRetries, retryDelay)
+		if err != nil {
+			return
+		}
+
+		// Process entries
+		entries, next := extractEntriesAndCursor(resp)
+		if len(entries) == 0 {
+			logg.Log.Info().Str("id", job.id).Msgf("empty page %d", batch)
+			return
+		}
+
+		if !processEntries(ctx, job, entries, followingJobs) {
+			return
+		}
+
+		// Check if we should continue
+		if isEndOfList(next) {
+			logg.Log.Info().Str("id", job.id).Msgf("completed after %d batches", batch)
+			return
+		}
+
+		cursor = next
+		batch++
+	}
+}
+
+func cleanupAccount(ctx context.Context, dummSvc dummyaccount.Service, username, accountID string) {
+	if err := dummSvc.LogOut(ctx, username); err != nil {
+		logg.Log.Error().
+			Err(err).
+			Str("username", username).
+			Str("account_id", accountID).
+			Msg("logout failed")
+	}
+}
+
+func fetchWithRetries(
+	ctx context.Context,
+	fm *FollowingMonitor,
+	accountID string,
+	cursor string,
+	batch int,
+	maxRetries int,
+	retryDelay time.Duration,
+) (*gjson.Result, error) {
+	var resp *gjson.Result
+	var err error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+			resp, err = fm.twitterAPI.Following(accountID, cursor)
+			if err == nil {
+				return resp, nil
+			}
+
+			logg.Log.Error().
+				Caller().
+				Ctx(ctx).
+				Err(err).
+				Str("id", accountID).
+				Msgf("fetching following page %d attempt %d/%d failed", batch, attempt, maxRetries)
+
+			if attempt < maxRetries {
+				select {
+				case <-time.After(retryDelay):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+		}
+	}
+
+	logg.Log.Error().
+		Str("id", accountID).
+		Msgf("max retries reached for page %d", batch)
+	return nil, fmt.Errorf("max retries reached for account %s page %d", accountID, batch)
+}
+
+func processEntries(
+	ctx context.Context,
+	job accountJob,
+	entries []gjson.Result,
+	followingJobs chan<- followingJob,
+) bool {
+	for _, e := range entries {
+		u := followingParsers.ParseFollowing(&e)
+		if u == nil || u.Handle == "" {
+			logg.Log.Error().
+				Str("id", job.id).
+				Msgf("failed to parse entry %s", e.Raw)
+			continue
+		}
+
+		select {
+		case followingJobs <- followingJob{
+			sourceID:  job.id,
+			following: *u,
+		}:
+		case <-ctx.Done():
+			logg.Log.Info().
+				Str("id", job.id).
+				Msg("context cancelled while processing entries")
+			return false
+		}
+	}
+	return true
+}
+
+func isEndOfList(nextCursor string) bool {
+	return nextCursor == "" || strings.HasPrefix(nextCursor, "0|")
 }
 
 // MonitorSingleAccount fetches *all* pages of “following” for the given user,
@@ -85,7 +418,6 @@ func (fm *FollowingMonitor) MonitorSingleAccount(
 				Msgf("id %q: no entries on page %d → stopping", id, batch)
 			break
 		}
-		fmt.Println("Lenght of entries: ", len(entries))
 		for _, e := range entries {
 			u := followingParsers.ParseFollowing(&e)
 			if u == nil {
@@ -147,43 +479,4 @@ func extractEntriesAndCursor(r *gjson.Result) (users []gjson.Result, nextCursor 
 	// everything *before* the last two entries are the real user items
 	users = all[:len(all)-2]
 	return users, nextCursor
-}
-
-// MonitorMultiple does the same across many usernames, up to maxWorkers concurrently.
-func MonitorMultiple(
-	ctx context.Context,
-	usernames []string,
-	maxWorkers, maxRetries int,
-	retryDelay time.Duration,
-	svc dummyaccount.Service,
-	handleFollowing func(context.Context, string, twitterTypes.FollowingUser),
-) {
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, maxWorkers)
-
-	for _, username := range usernames {
-		wg.Add(1)
-		sem <- struct{}{}
-
-		go func(user string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			fm, sel, err := NewFollowingMonitor(ctx, svc)
-			if err != nil {
-				logg.Log.Error().Caller().Ctx(ctx).Err(err).
-					Msgf("username %s: unable to init FollowingMonitor", user)
-				return
-			}
-			defer svc.LogOut(ctx, sel.UserName)
-
-			if err := fm.MonitorSingleAccount(ctx, user, maxRetries, retryDelay, handleFollowing); err != nil {
-				logg.Log.Error().Caller().Ctx(ctx).Err(err).
-					Msgf("username %s: error during MonitorSingleAccount", user)
-			}
-		}(username)
-		time.Sleep(50 * time.Millisecond) // throttle between launches
-	}
-
-	wg.Wait()
 }
