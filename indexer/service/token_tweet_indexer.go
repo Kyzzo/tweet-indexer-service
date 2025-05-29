@@ -32,9 +32,8 @@ const (
 
 type TokenTweetIndexer struct {
 	tweetRepo      repository.TweetEventRepository
-	twtPrf         twitterprofile.Service
+	twtPrf         twitterprofile.Repository
 	checkpointRepo repository.UserCheckPointRepository
-	twtProfile     twitterprofile.Service
 	dummSvc        dummyaccount.Service
 	grokSvc        GrokIndexer
 }
@@ -42,22 +41,20 @@ type TokenTweetIndexer struct {
 func NewTokenTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap, sassIndx SaasIndexer) TokenTweetIndexer {
 	tweetRepo := repository.NewTweetIndexRepo(conn)
 	checkpointRepo := repository.NewUserCheckPointRepository(conn)
-	twtPrf := twitterprofile.NewUserService(conn, &cfg)
+	twtPrf := twitterprofile.NewRepository(conn)
 	dummSvc := dummyaccount.NewSeleniumService(conn, &cfg)
-	twtProfile := twitterprofile.NewUserService(conn, &cfg)
 	grokSvc := NewGrokIndexer(cfg, conn, dummSvc, sassIndx)
 
 	return TokenTweetIndexer{
 		tweetRepo:      tweetRepo,
 		checkpointRepo: checkpointRepo,
-		twtProfile:     twtProfile,
 		dummSvc:        dummSvc,
 		twtPrf:         twtPrf,
 		grokSvc:        grokSvc,
 	}
 }
 
-var trackedUsers = make(map[string]twitterTypes.TrackedUser) // Keeps track of monitored users
+var trackedUsers = make(map[string]twitterprofile.TwitterProfile) // Keeps track of monitored users
 func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 	logg.Log.Info().Caller().Ctx(ctx).Msg("Starting tweet indexer service...")
 
@@ -76,7 +73,7 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 		if err != nil {
 			log.Printf("invalid REPLICAS: %v", err)
 		}
-		users, err := ti.twtPrf.GetAllTrackedUsers(ctx)
+		users, err := ti.twtPrf.FindByIsTracking(ctx, true)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
 			continue
@@ -90,10 +87,10 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 		}
 
 		mySlice := users[start:end]
-		usersToSync := make([]twitterTypes.TrackedUser, 0, len(mySlice))
+		usersToSync := make([]twitterprofile.TwitterProfile, 0, len(mySlice))
 		for _, user := range mySlice {
 			cache.UpdateUserID(user.Handle, user.ID)
-			usersToSync = append(usersToSync, *user.TOTwitterUser())
+			usersToSync = append(usersToSync, *user)
 		}
 		logg.Log.Info().Caller().Ctx(ctx).Msgf("Syncing %d users in pod %s (ordinal %d/%d)", len(usersToSync), podName, ordinal, reps)
 		err = ti.Sync(ctx, usersToSync)
@@ -112,7 +109,7 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 }
 
 // ✅ **Sync tweets for a list of users**
-func (ti TokenTweetIndexer) Sync(ctx context.Context, users []twitterTypes.TrackedUser) error {
+func (ti TokenTweetIndexer) Sync(ctx context.Context, users []twitterprofile.TwitterProfile) error {
 	startTime := time.Now()
 	userToSync, err := ti.parallelCheckpoints(ctx, users, 10)
 	if err != nil {
@@ -128,11 +125,11 @@ func (ti TokenTweetIndexer) Sync(ctx context.Context, users []twitterTypes.Track
 
 func (ti TokenTweetIndexer) parallelCheckpoints(
 	ctx context.Context,
-	users []twitterTypes.TrackedUser,
+	users []twitterprofile.TwitterProfile,
 	maxConcurrency int,
 ) (map[string]time.Time, error) {
 
-	type job struct{ user twitterTypes.TrackedUser }
+	type job struct{ user twitterprofile.TwitterProfile }
 	type result struct {
 		user string
 		ts   time.Time
@@ -188,7 +185,7 @@ func (ti TokenTweetIndexer) parallelCheckpoints(
 	return out, nil
 }
 
-func (ti TokenTweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twitterTypes.TrackedUser) time.Time {
+func (ti TokenTweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twitterprofile.TwitterProfile) time.Time {
 	twt, err := ti.tweetRepo.FindMostRecentByUserId(ctx, user.ID)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching user checkpoint")
