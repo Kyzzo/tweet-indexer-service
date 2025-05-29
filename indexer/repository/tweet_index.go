@@ -17,6 +17,22 @@ import (
 
 const tweetIndexCollection = "tweet.indexes"
 
+var (
+	NONE_GROK = []string{
+		string(twitterTypes.Reply),
+		string(twitterTypes.Retweet),
+		string(twitterTypes.QuoteRetweet)}
+
+	noneGrokBson bson.A // This will hold the BSON array representation of NONE_GROK
+)
+
+func init() {
+	noneGrokBson = bson.A{}
+	for _, item := range NONE_GROK {
+		noneGrokBson = append(noneGrokBson, item)
+	}
+}
+
 type TweetEventRepository interface {
 	SaveOrUpdate(ctx context.Context, blockIndex model.TweetEvent) (interface{}, error)
 	FindAllByUserId(ctx context.Context, userId string, idx int64) ([]model.TweetEvent, error)
@@ -27,6 +43,10 @@ type TweetEventRepository interface {
 	FindMostRecentByUserId(ctx context.Context, userId string) (*model.TweetEvent, error)
 	FindAllNoneGrok(ctx context.Context) ([]model.TweetEvent, error)
 	FindAllNoneTokenGrok(ctx context.Context) ([]model.TweetEvent, error)
+	FindAvgScrapeTime(ctx context.Context, since time.Time) (float64, error)
+	FindAvgGrokTime(ctx context.Context, since time.Time) (float64, error)
+	FindUniqueUsersSince(ctx context.Context, since time.Time) (int64, error)
+	CountGrokVsNonGrok(ctx context.Context, since time.Time) (grokCount, nonGrokCount int64, err error)
 }
 type mongoEventRepository struct {
 	conn    *mongodb.MongoConnection
@@ -181,13 +201,9 @@ func (repo *mongoEventRepository) FindAllNoneGrok(ctx context.Context) ([]model.
 		bson.D{{
 			Key: "$match",
 			Value: bson.D{
-				{"tweet_type", bson.D{{
-					"$nin", bson.A{
-						twitterTypes.Reply,
-						twitterTypes.Retweet,
-						twitterTypes.QuoteRetweet,
-					},
-				}}},
+				{Key: "tweet_type", Value: bson.D{
+					{Key: "$nin", Value: bson.A(noneGrokBson)}, // Convert slice to bson.A
+				}},
 				{"captured_at", bson.D{{"$lte", threshold}}},
 			},
 		}},
@@ -265,4 +281,164 @@ func (repo *mongoEventRepository) FindByTweetId(ctx context.Context, tweetId str
 		return nil, err
 	}
 	return &index, nil
+}
+
+func (repo *mongoEventRepository) FindAvgScrapeTime(ctx context.Context, since time.Time) (float64, error) {
+	pipeline := mongo.Pipeline{
+		// 1) match created_at >= cutoff
+		{{"$match", bson.D{{"created_at", bson.D{{"$gte", primitive.NewDateTimeFromTime(since)}}}}}},
+		// 2) project the difference in ms
+		{{"$project", bson.D{{"diffMs", bson.D{{"$subtract", bson.A{"$captured_at", "$created_at"}}}}}}},
+		// 3) group to average it
+		{{"$group", bson.D{
+			bson.E{Key: "_id", Value: nil},
+			{"avgMs", bson.D{{"$avg", "$diffMs"}}},
+		}}},
+		// 4) project into seconds
+		{{"$project", bson.D{
+			{"_id", 0},
+			{"avgSeconds", bson.D{{"$divide", bson.A{"$avgMs", 1000}}}},
+		}}},
+	}
+
+	// Run aggregation
+	cursor, err := repo.conn.Datastore.Collection(tweetIndexCollection).Aggregate(ctx, pipeline, options.Aggregate().SetMaxTime(30*time.Second))
+	if err != nil {
+		return 0, err
+	}
+	defer cursor.Close(ctx)
+
+	// Pull out the result
+	var result struct {
+		AvgSeconds float64 `bson:"avgSeconds"`
+	}
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&result); err != nil {
+			return 0, err
+		}
+		return result.AvgSeconds, nil
+	}
+	if err := cursor.Err(); err != nil {
+		return 0, err
+	}
+
+	// no documents → return zero
+	return 0, nil
+}
+
+func (repo *mongoEventRepository) FindAvgGrokTime(ctx context.Context, since time.Time) (float64, error) {
+	pipeline := mongo.Pipeline{
+		// 1) only tweets captured in last 24h
+		{{"$match", bson.D{{"captured_at", bson.D{{"$gte", primitive.NewDateTimeFromTime(since)}}}}}},
+		// 2) join in the grok.indexes collection on _id
+		{{"$lookup", bson.D{
+			{"from", grokIndexCollection},
+			{"localField", "_id"},
+			{"foreignField", "_id"},
+			{"as", "grok_data"},
+		}}},
+		// 3) unwind the array (skip if no grok_data? you can add preserveNullAndEmpty later)
+		{{"$unwind", "$grok_data"}},
+		// 4) compute the difference in ms between grok_data.created_at and captured_at
+		{{"$project", bson.D{{"diffMs", bson.D{{"$subtract", bson.A{"$grok_data.created_at", "$captured_at"}}}}}}},
+		// 5) group and average those diffs
+		{{"$group", bson.D{
+			{"_id", nil},
+			{"avgMs", bson.D{{"$avg", "$diffMs"}}},
+		}}},
+		// 6) project final result in seconds
+		{{"$project", bson.D{
+			{"_id", 0},
+			{"avgSeconds", bson.D{{"$divide", bson.A{"$avgMs", 1000}}}},
+		}}},
+	}
+
+	// run the aggregation
+	cursor, err := repo.conn.Datastore.Collection(tweetIndexCollection).Aggregate(ctx, pipeline, options.Aggregate().SetMaxTime(30*time.Second))
+	if err != nil {
+		return 0, err
+	}
+	defer cursor.Close(ctx)
+
+	// decode
+	var out struct {
+		AvgSeconds float64 `bson:"avgSeconds"`
+	}
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&out); err != nil {
+			return 0, err
+		}
+		return out.AvgSeconds, nil
+	}
+	if err := cursor.Err(); err != nil {
+		return 0, err
+	}
+	// no matching docs → zero
+	return 0, nil
+}
+
+func (repo *mongoEventRepository) FindUniqueUsersSince(ctx context.Context, since time.Time) (int64, error) {
+	filter := bson.D{{"created_at", bson.D{{"$gte", primitive.NewDateTimeFromTime(since)}}}}
+	ids, err := repo.conn.Datastore.Collection(tweetIndexCollection).Distinct(ctx, "user_id", filter)
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(ids)), nil
+}
+
+func (repo *mongoEventRepository) CountGrokVsNonGrok(ctx context.Context, since time.Time) (grokCount, nonGrokCount int64, err error) {
+	cutoff := primitive.NewDateTimeFromTime(since)
+
+	pipeline := mongo.Pipeline{
+		// Stage 1: Filter documents since cutoff
+		bson.D{{"$match", bson.D{{"created_at", bson.D{{"$gte", cutoff}}}}}},
+
+		// Stage 2: Single group stage with both counters
+		bson.D{{"$group", bson.D{
+			{"_id", nil},
+			{"grokCount", bson.D{
+				{"$sum", bson.D{
+					{"$cond", bson.A{
+						bson.D{{"$not", bson.D{{"$in", bson.A{"$tweet_type", noneGrokBson}}}}},
+						1,
+						0,
+					}},
+				}},
+			}},
+			{"nonGrokCount", bson.D{
+				{"$sum", bson.D{
+					{"$cond", bson.A{
+						bson.D{{"$in", bson.A{"$tweet_type", noneGrokBson}}},
+						1,
+						0,
+					}},
+				}},
+			}},
+		}}},
+	}
+
+	cur, err := repo.conn.Datastore.Collection(tweetIndexCollection).Aggregate(ctx, pipeline)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer cur.Close(ctx)
+
+	var res struct {
+		GrokCount    int64 `bson:"grokCount"`
+		NonGrokCount int64 `bson:"nonGrokCount"`
+	}
+
+	if cur.Next(ctx) {
+		if err := cur.Decode(&res); err != nil {
+			return 0, 0, err
+		}
+		return res.GrokCount, res.NonGrokCount, nil
+	}
+
+	if err := cur.Err(); err != nil {
+		return 0, 0, err
+	}
+
+	// No documents found
+	return 0, 0, nil
 }
