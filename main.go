@@ -95,10 +95,12 @@ func Schedulers(conn *mongodb.MongoConnection, cfg *config.Config, dummSvc dummy
 	var (
 		grokRetry   = sched.NewGrokRetryScheduler(cfg, conn, dummSvc, saasIdx)
 		healthCheck = sched.NewAccountHealthScheduler(cfg, conn, dummSvc)
+		scrapeCycle = sched.NewScrapeCycleScheduler(cfg, conn)
 	)
 
 	return []scheduler.Scheduler{
 		grokRetry,
 		healthCheck,
+		scrapeCycle,
 	}
 }
