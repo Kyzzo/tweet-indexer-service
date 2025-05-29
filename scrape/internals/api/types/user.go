@@ -32,17 +32,3 @@ type TrackedUser struct {
 	CreatedAt    time.Time `bson:"created_at" json:"created_at"`
 	UpdatedAt    time.Time `bson:"updated_at" json:"updated_at"`
 }
-
-func (u *TrackedUser) ToTwitterFollowingUser() *FollowingUser {
-	return &FollowingUser{
-		ID:         u.ID,
-		UserName:   u.UserName,
-		Handle:     u.Handle,
-		ProfileImg: u.ProfileImg,
-		Followers:  u.Followers,
-		Following:  u.Following,
-		Verified:   u.Verified,
-		IsCrypto:   true, // Default value, can be set later
-		Tracking:   true, // Default value, can be set later
-	}
-}
