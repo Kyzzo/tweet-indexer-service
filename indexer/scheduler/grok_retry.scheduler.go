@@ -7,6 +7,7 @@ import (
 
 	"github.com/bsm/redislock"
 	"github.com/jeetdotso/tweet-indexer-service/config"
+	"github.com/jeetdotso/tweet-indexer-service/cycle"
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/model"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/repository"
@@ -23,6 +24,7 @@ const GrokRetryKey = "grok-retry-lock-sync-minute-job"
 type GrokRetyImpl struct {
 	svc       service.GrokIndexer
 	tweetRepo repository.TweetEventRepository
+	scr       cycle.Service
 	locker    *redislock.Client
 }
 
@@ -35,17 +37,19 @@ func NewGrokRetryScheduler(cfg *config.Config, conn *mongodb.MongoConnection, du
 	var (
 		svc       = service.NewGrokIndexer(*cfg, conn, dummySvc, saasIdx)
 		tweetRepo = repository.NewTweetIndexRepo(conn)
+		scr       = cycle.NewCycleService(conn, cfg)
 	)
 	return &GrokRetyImpl{
 		svc:       svc,
 		locker:    locker,
 		tweetRepo: tweetRepo,
+		scr:       scr,
 	}
 }
 
 func (s *GrokRetyImpl) Execute() {
 	ctx := context.Background()
-	lock, err := s.locker.Obtain(ctx, GrokRetryKey, 30*time.Minute, &redislock.Options{
+	lock, err := s.locker.Obtain(ctx, GrokRetryKey, 5*time.Minute, &redislock.Options{
 		// give it up to half a second to get the lock
 		RetryStrategy: redislock.LimitRetry(redislock.LinearBackoff(50*time.Millisecond), 10),
 	})
@@ -68,6 +72,9 @@ func (s *GrokRetyImpl) Execute() {
 		return
 	}
 	logg.Log.Info().Caller().Ctx(ctx).Int("count", len(twts)).Msg("Found tweets to retry grok")
+	if err := s.scr.AddGrokError(ctx, len(twts)); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error adding grok error to scrape cycle")
+	}
 	sem := make(chan struct{}, min(SCHEDULER_THREADS, len(twts)))
 	var wg sync.WaitGroup
 
@@ -82,7 +89,6 @@ func (s *GrokRetyImpl) Execute() {
 			s.svc.Start(ctx, &twt, done) // Pass the done channel
 			<-done                       // Wait for completion
 
-			time.Sleep(1 * time.Second)
 		}(t)
 	}
 
