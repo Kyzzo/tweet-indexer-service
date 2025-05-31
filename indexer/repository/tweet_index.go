@@ -196,6 +196,7 @@ func (repo *mongoEventRepository) FindMostRecentByUserId(ctx context.Context, us
 
 func (repo *mongoEventRepository) FindAllNoneGrok(ctx context.Context) ([]model.TweetEvent, error) {
 	threshold := primitive.NewDateTimeFromTime(time.Now().Add(-20 * time.Second))
+	maxThreshold := primitive.NewDateTimeFromTime(time.Now().Add(-1 * time.Hour))
 	pipeline := mongo.Pipeline{
 		// stage 1
 		bson.D{{
@@ -205,6 +206,7 @@ func (repo *mongoEventRepository) FindAllNoneGrok(ctx context.Context) ([]model.
 					{Key: "$nin", Value: bson.A(noneGrokBson)}, // Convert slice to bson.A
 				}},
 				{"captured_at", bson.D{{"$lte", threshold}}},
+				{"captured_at", bson.D{{"$gte", maxThreshold}}},
 			},
 		}},
 		// stage 2
