@@ -40,7 +40,7 @@ func NewTweetFromLegacy(username string, legacy *gjson.Result) *types.Tweet {
 
 func NewAccountMonitor(ctx context.Context, svc dummyaccount.Service) (*AccountMonitor, *dummyaccount.SelAccount, error) {
 	// Fetch the next available Selenium account
-	selAccount, err := svc.LogInToNext(ctx)
+	selAccount, err := svc.LogInToNextGroup(ctx, dummyaccount.WORKING_GROUP)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium account.")
 		return nil, nil, err
