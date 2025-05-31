@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+option go_package = "tweet-indexer-service/proto/grpcsaasentry";
+
+package grpcsaasentry;
+
+// Message representing a Twitter profile.
+message Profile {
+  string id = 1;              // Unique identifier for the Twitter profile.
+  string user_id = 2;         // The user ID from Twitter.
+  string user_name = 3;       // Full name from Twitter.
+  string handle = 4;          // Twitter handle.
+  string profile_img = 5;     // URL for the profile image.
+  int32 followers = 6;        // Number of followers.
+  int32 following = 7;        // Number of accounts this user is following.
+  bool verified = 8;          // Whether the account is verified.
+}
+
+
+// Request 
+message GetProfileRequest {
+  string username = 1;  // 
+}
+
+
+message GetProfileResponse {
+  Profile profile = 1;  // The team member profile.
+   bool success = 2; // Indicates if the request was successful.
+   string message = 3; // Additional message, if any. 
+}
+
+
+message AddFollowingRequest {
+  string id = 1;    // The deck identifier.
+}
+
+message AddFollowingsByUsernameRequest {
+  string username = 1; // The username to follow.
+}
+
+message AddFollowingsUsernameResponse {
+  bool success = 1; // Indicates if the follow operation was successful.
+  string message = 2; // Additional message, if any.
+  string id = 3; // The ID of the followed profile.
+}
+message FollowedListRequest {
+  string kol_id = 1;  // 
+}
+
+message BlockListRequest {
+  repeated string kol_ids = 1;  // The ID of the user whose block list is being requested.
+}
+message FollowListResponse {
+ repeated string ids = 1;  
+}
+
+message FollowListWithExclusionsRequest {
+  string kol_id = 1;  // 
+  repeated string exclude_ids = 2; // List of IDs to exclude from the response.
+}
+
+message FollowingFullListResponse {
+  repeated Profile profiles = 1; // List of profiles that the user is following.
+}
+
+message CheckHealthResponse {
+  bool isOk = 1;
+}
+
+message ErrorResponse {
+  string error = 1; // Error message.
+}
+
+
+message EmptyRequest {}
+// Service definition for saas entry operations.
+service SaasEntryService {
+  // Retrieves a single profile by username.
+  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse);
+  // Starts follow collection
+  rpc AddFollowing(AddFollowingRequest) returns (CheckHealthResponse);
+  // Retrieves a list of profiles that the user is following. 
+  rpc GetFollowListByID(FollowedListRequest) returns (FollowListResponse);
+  // Retrieves a list of profiles that the user is following, excluding specified IDs.
+  rpc GetFollowedListWithExcluding(FollowListWithExclusionsRequest) returns (FollowListResponse);
+  // Check health of the service.
+  rpc CheckHealth(EmptyRequest) returns (CheckHealthResponse);
+  //Add Followings by Username
+  rpc AddFollowingsByUsername(AddFollowingsByUsernameRequest) returns (AddFollowingsUsernameResponse);
+  // Retrieves a full list of profiles that the user is following.
+  rpc GetFollowingFullList(FollowedListRequest) returns (FollowingFullListResponse);
+  // Retrieves a full profiles from IDs
+  rpc GetProfilesByIDs(BlockListRequest) returns (FollowingFullListResponse);
+
+
+}
