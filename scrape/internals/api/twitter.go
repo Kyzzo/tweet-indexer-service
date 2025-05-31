@@ -120,12 +120,7 @@ func (tc *TwitterClient) FullUser(username string) (*gjson.Result, error) {
 	params.Add("features", string(features))
 	params.Add("fieldToggles", string(fieldToggles))
 
-	result, err := tc.commonRequest("/i/api/graphql/32pL5BWe9WKeSK1MoPvFQQ/UserByScreenName", params)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return tc.commonRequest("/i/api/graphql/32pL5BWe9WKeSK1MoPvFQQ/UserByScreenName", params)
 }
 
 func (tc *TwitterClient) Following(userID string, cursor string) (*gjson.Result, error) {
