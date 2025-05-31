@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,12 +10,17 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/connection/proto/grpcclient"
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/controller"
+	"github.com/jeetdotso/tweet-indexer-service/indexer/controller/indexergrpchandler"
 	sched "github.com/jeetdotso/tweet-indexer-service/indexer/scheduler"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/service"
+	"github.com/jeetdotso/tweet-indexer-service/logg"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
+	"github.com/jeetdotso/tweet-indexer-service/proto/grpcsaasentry"
 	"github.com/jeetdotso/tweet-indexer-service/scheduler"
 	"github.com/robfig/cron"
 	"github.com/rs/zerolog/log"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 func main() {
@@ -29,9 +35,11 @@ func main() {
 
 	dummSvc := dummyaccount.NewSeleniumService(&conn, cfg)
 	dummSvc.ResetAll(ctx)
-	// //Register Scrapes
+	// // //Register Scrapes
 	_, saasIdx := registerScrapes(ctx, *cfg, &conn, grpcconn)
 
+	//Register GRPC server
+	go registerGrpcServer(cfg, &conn, grpcconn, dummSvc)
 	// //Register Schedulers
 	go registerSchedulers(cfg, &conn, dummSvc, saasIdx)
 
@@ -105,4 +113,25 @@ func Schedulers(conn *mongodb.MongoConnection, cfg *config.Config, dummSvc dummy
 		followCycle,
 		scrapeCycle,
 	}
+}
+
+func registerGrpcServer(cfg *config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap, dummSvc dummyaccount.Service) {
+	lis, err := net.Listen("tcp", ":"+cfg.Grpc.Server.Port)
+	if err != nil {
+		logg.Log.Panic().Err(err).Msgf("failed to listen on port %s", cfg.Grpc.Server.Port)
+	}
+
+	grpcsrv := grpc.NewServer()
+
+	// Register Saas Entry GRPC
+	saasEntryCtrl := indexergrpchandler.NewSaasGRPCHandler(cfg, conn, dummSvc)
+	grpcsaasentry.RegisterSaasEntryServiceServer(grpcsrv, saasEntryCtrl)
+
+	reflection.Register(grpcsrv)
+
+	if err = grpcsrv.Serve(lis); err != nil {
+		logg.Log.Panic().Err(err).Msgf("failed to serve gRPC on port %s", cfg.Grpc.Server.Port)
+		return
+	}
+	logg.Log.Info().Msgf("grpc server started on port %s", cfg.Grpc.Server.Port)
 }
