@@ -33,6 +33,7 @@ type Repository interface {
 	FindByIsTracking(ctx context.Context, isTracking bool) ([]*TwitterProfile, error)
 	FindByIsTrackingPagination(ctx context.Context, page, size int64, isTracking bool) (*persistence.Pagination[[]*TwitterProfile], error)
 	UpsertTwitterProfile(ctx context.Context, u twiterTypes.FollowingUser) error
+	FindAllById(ctx context.Context, ids []string) ([]TwitterProfile, error)
 }
 type MongoRepository struct {
 	conn    *mongodb.MongoConnection
@@ -453,4 +454,25 @@ func (repo *MongoRepository) UpsertTwitterProfile(ctx context.Context, u twiterT
 		Collection(repo.absrepo.Collection).
 		UpdateOne(ctx, filter, update, opts)
 	return err
+}
+
+func (repo *MongoRepository) FindAllById(ctx context.Context, ids []string) ([]TwitterProfile, error) {
+	filter := bson.M{"_id": bson.M{"$in": ids}}
+	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, nil)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding users by ID.")
+		return nil, err
+	}
+
+	var users []TwitterProfile
+	for cursor.Next(ctx) {
+		var user TwitterProfile
+		err = cursor.Decode(&user)
+		if err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user.")
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, nil
 }
