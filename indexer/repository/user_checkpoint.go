@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/jeetdotso/tweet-indexer-service/indexer/model"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
@@ -23,6 +25,7 @@ type mongoUserCheckpointRepo struct {
 type UserCheckPointRepository interface {
 	UpdateOrSave(ctx context.Context, checkpoint model.UserCheckPoint) (interface{}, error)
 	FindById(ctx context.Context, id string) (*model.UserCheckPoint, error)
+	BulkUpsert(ctx context.Context, checkpoints []model.UserCheckPoint) error
 }
 
 func NewUserCheckPointRepository(conn *mongodb.MongoConnection) UserCheckPointRepository {
@@ -72,4 +75,43 @@ func (*mongoUserCheckpointRepo) getCheckPointUpdate(checkpoint model.UserCheckPo
 		{"last_tweet_created_at", checkpoint.LastTweetCreatedAt},
 		{"updated_at", checkpoint.UpdatedAt},
 	}}}
+}
+
+// / BulkUpsert takes a slice of UserCheckPoint and upserts them all in one BulkWrite
+func (repo *mongoUserCheckpointRepo) BulkUpsert(
+	ctx context.Context,
+	checkpoints []model.UserCheckPoint,
+) error {
+	if len(checkpoints) == 0 {
+		return nil
+	}
+
+	// Build a slice of WriteModels (one UpdateOneModel per checkpoint)
+	ops := make([]mongo.WriteModel, 0, len(checkpoints))
+	now := time.Now()
+
+	for _, cp := range checkpoints {
+		filter := bson.M{"_id": cp.ID}
+		update := bson.M{"$set": bson.M{
+			"last_tweet":            cp.LastTweet,
+			"last_tweet_created_at": cp.LastTweetCreatedAt,
+			"updated_at":            now,
+		}}
+		upsertOp := mongo.NewUpdateOneModel().
+			SetFilter(filter).
+			SetUpdate(update).
+			SetUpsert(true)
+		ops = append(ops, upsertOp)
+	}
+
+	// Grab the raw collection
+	coll := repo.conn.Datastore.Collection(collection)
+
+	// Execute BulkWrite (unordered for maximum throughput)
+	_, err := coll.BulkWrite(ctx, ops, options.BulkWrite().SetOrdered(false))
+	if err != nil {
+		logg.Log.Error().Err(err).Msg("bulk upsert checkpoints failed")
+		return fmt.Errorf("bulk upsert checkpoints: %w", err)
+	}
+	return nil
 }
