@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jeetdotso/tweet-indexer-service/indexer/model"
@@ -47,6 +48,7 @@ type TweetEventRepository interface {
 	FindAvgGrokTime(ctx context.Context, since time.Time) (float64, error)
 	FindUniqueUsersSince(ctx context.Context, since time.Time) (int64, error)
 	CountGrokVsNonGrok(ctx context.Context, since time.Time) (grokCount, nonGrokCount int64, err error)
+	FindLatestTweetsForUsers(ctx context.Context, userIds []string) ([]latestTweet, error)
 }
 type mongoEventRepository struct {
 	conn    *mongodb.MongoConnection
@@ -443,4 +445,48 @@ func (repo *mongoEventRepository) CountGrokVsNonGrok(ctx context.Context, since 
 
 	// No documents found
 	return 0, 0, nil
+}
+
+type latestTweet struct {
+	UserID    string    `bson:"_id"`        // grouped _id → user_id
+	TweetID   string    `bson:"tweet_id"`   // the tweet’s _id
+	CreatedAt time.Time `bson:"created_at"` // the tweet’s created_at
+}
+
+func (repo *mongoEventRepository) FindLatestTweetsForUsers(
+	ctx context.Context,
+	userIds []string,
+) ([]latestTweet, error) {
+	// 1) Build the aggregation pipeline:
+	pipeline := mongo.Pipeline{
+		// Stage 1: Match only those whose user_id is in userIds
+		{{"$match", bson.D{
+			{"user_id", bson.D{{"$in", userIds}}},
+		}}},
+		// Stage 2: Sort each user’s tweets by created_at descending
+		{{"$sort", bson.D{
+			{"user_id", 1},
+			{"created_at", -1},
+		}}},
+		// Stage 3: Group by user_id, taking the first (newest) tweet
+		{{"$group", bson.D{
+			{"_id", "$user_id"},
+			{"tweet_id", bson.D{{"$first", "$_id"}}},
+			{"created_at", bson.D{{"$first", "$created_at"}}},
+		}}},
+	}
+
+	// 2) Execute the aggregation
+	cursor, err := repo.conn.Datastore.Collection(tweetIndexCollection).Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("aggregation failed: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	// 3) Decode results into a slice
+	var results []latestTweet
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("failed to decode aggregation results: %w", err)
+	}
+	return results, nil
 }
