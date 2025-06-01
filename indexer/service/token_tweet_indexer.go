@@ -119,20 +119,28 @@ func (ti TokenTweetIndexer) Sync(ctx context.Context, usersToSync []twitterprofi
 	}
 
 	// 2) Fetch each user’s latest tweet in one aggregation call
-	t0 := time.Now()
+	idToHandle := make(map[string]string, len(usersToSync))
+	for _, u := range usersToSync {
+		idToHandle[u.ID] = u.Handle
+	}
+
+	// 2) Run the aggregation to get each user’s latest tweet (by user ID):
 	latests, err := ti.tweetRepo.FindLatestTweetsForUsers(ctx, userIDs)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error running aggregation for latest tweets")
 		return err
 	}
-	logg.Log.Info().Caller().Ctx(ctx).Msgf("Aggregation took %s", time.Since(t0))
 
-	// 3) Build a map of (userID → createdAt) so we can feed it to TweetsPipeline later
+	// 3) Build userToTs keyed by handle, and collect the toUpsert slice (still keyed by ID):
 	var toUpsert []model.UserCheckPoint
 	userToTs := make(map[string]time.Time, len(userIDs))
-	// 3) Build toUpsert and userToTs for users that have tweets:
+
 	for _, lt := range latests {
-		userToTs[lt.UserID] = lt.CreatedAt
+		// look up this user’s handle from idToHandle:
+		handle := idToHandle[lt.UserID]
+		userToTs[handle] = lt.CreatedAt
+
+		// still upsert by ID in the checkpoint collection:
 		toUpsert = append(toUpsert, model.UserCheckPoint{
 			ID:                 lt.UserID,
 			LastTweet:          lt.TweetID,
@@ -140,12 +148,13 @@ func (ti TokenTweetIndexer) Sync(ctx context.Context, usersToSync []twitterprofi
 			UpdatedAt:          time.Now(),
 		})
 	}
-	// Supply defaults for users with zero tweets:
+
+	// 4) Supply defaults for users with zero tweets (by handle):
 	defaultTime := time.Now().Add(-5 * time.Minute)
 	for _, u := range usersToSync {
-		if _, exists := userToTs[u.ID]; !exists {
+		if _, exists := userToTs[u.Handle]; !exists {
 			userToTs[u.Handle] = defaultTime
-			// (Option A) If you want a checkpoint row for them, also do:
+			// If you also want a checkpoint row for them (by ID), uncomment:
 			// toUpsert = append(toUpsert, model.UserCheckPoint{
 			//     ID:                 u.ID,
 			//     LastTweet:          "",
@@ -155,12 +164,9 @@ func (ti TokenTweetIndexer) Sync(ctx context.Context, usersToSync []twitterprofi
 		}
 	}
 
-	// 4) Bulk‐upsert the checkpoint documents
-	t1 := time.Now()
 	if err := ti.checkpointRepo.BulkUpsert(ctx, toUpsert); err != nil {
 		return err
 	}
-	logg.Log.Info().Caller().Ctx(ctx).Msgf("Bulk checkpoint upsert took %s", time.Since(t1))
 
 	logg.Log.Info().Caller().Ctx(ctx).Msgf("-------------------------Sync completed in : %s", time.Since(startTime))
 	rollback.TweetsPipeline(ctx, userToTs, 60, 20, 2, 2*time.Second, ti.dummSvc, ti.HandleTweetEvent, ti.syncLatestToCheckPoint)
