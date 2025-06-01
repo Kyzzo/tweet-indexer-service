@@ -16,6 +16,7 @@ func GetUserID(username string) (string, error) {
 	UserID, exists := userIDsCache[username]
 	if !exists {
 		logger.Debugf("[%s] UserID not found in cache, fetching from API", username)
+		return "", nil // Return empty string if not found in cache
 		var err error
 		client, _ := twitterAPI.CreateTwitterClient()
 		UserID, err = client.UserID(username)

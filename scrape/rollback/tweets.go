@@ -73,6 +73,10 @@ func (trb *TweetsRollBack) Tweets(ctx context.Context, username string, targetDa
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("username", username).Msg("Error fetching UserID")
 		return nil, fmt.Errorf("failed to get UserID: %w", err)
 	}
+	if UserID == "" {
+		logg.Log.Error().Caller().Ctx(ctx).Str("username", username).Msg("UserID is empty")
+		return nil, fmt.Errorf("UserID for username %s is empty", username)
+	}
 
 	tweets, err := trb.collectTweets(ctx, username, UserID, targetDate)
 	if err != nil {
