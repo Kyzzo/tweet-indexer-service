@@ -144,7 +144,7 @@ func (ti TokenTweetIndexer) Sync(ctx context.Context, usersToSync []twitterprofi
 	defaultTime := time.Now().Add(-5 * time.Minute)
 	for _, u := range usersToSync {
 		if _, exists := userToTs[u.ID]; !exists {
-			userToTs[u.ID] = defaultTime
+			userToTs[u.Handle] = defaultTime
 			// (Option A) If you want a checkpoint row for them, also do:
 			// toUpsert = append(toUpsert, model.UserCheckPoint{
 			//     ID:                 u.ID,
