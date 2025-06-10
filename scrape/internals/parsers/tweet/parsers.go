@@ -118,6 +118,7 @@ func ParseTweetFromEntry(entry *gjson.Result, trackedUserID, trackedUsername str
 			CreatedAt:        created,
 			Text:             strings.Join(texts, "\n\n"),
 			MediaAttachments: &media,
+			FullInterface:    entry.String(), // store the full module for later use
 			UserID:           trackedUserID,
 			Username:         trackedUsername,
 			TweetType:        twitterTypes.Thread, // make sure you’ve defined this new type
@@ -300,6 +301,7 @@ func ParseTweetFromEntry(entry *gjson.Result, trackedUserID, trackedUsername str
 		UserID:            userID,
 		ConversationID:    convoID,
 		ReplyToID:         replyTo,
+		FullInterface:     entry.String(), // store the full module for later use
 		TweetType:         typ,
 		RetweetedByID:     retweetedBy,
 		TweetID:           id,
