@@ -235,9 +235,10 @@ func CreateTwitterClient() (*TwitterClient, error) {
 	})
 }
 
-func CreateTwitterClientWithCookies(cookies []*http.Cookie) (*TwitterClient, error) {
+func CreateTwitterClientWithCookies(cookies []*http.Cookie, proxy string) (*TwitterClient, error) {
 	return NewTwitterClient(&NewTwitterClientOptions{
-		BaseURL: "https://x.com",
-		Cookies: cookies,
+		BaseURL:  "https://x.com",
+		Cookies:  cookies,
+		ProxyURL: proxy,
 	})
 }
