@@ -15,6 +15,7 @@ import (
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 	tweetParsers "github.com/jeetdotso/tweet-indexer-service/scrape/internals/parsers/tweet"
 	userParsers "github.com/jeetdotso/tweet-indexer-service/scrape/internals/parsers/user"
+	"github.com/jeetdotso/tweet-indexer-service/scrape/proxy"
 	types "github.com/jeetdotso/tweet-indexer-service/scrape/tracking/types"
 )
 
@@ -45,9 +46,10 @@ func NewAccountMonitor(ctx context.Context, svc dummyaccount.Service) (*AccountM
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium account.")
 		return nil, nil, err
 	}
+	px := proxy.NextProxy()
 
 	// Create Twitter API client using the cookies from the Selenium account
-	twitterAPIClient, _ := twitterAPI.CreateTwitterClientWithCookies(selAccount.GetCookiesHttp())
+	twitterAPIClient, _ := twitterAPI.CreateTwitterClientWithCookies(selAccount.GetCookiesHttp(), px)
 	acc := &AccountMonitor{
 		TweetsCache: cache.TweetsCache,
 		twitterAPI:  twitterAPIClient,
@@ -152,7 +154,8 @@ func (am *AccountMonitor) fetchTweetWithRotation(
 				Msg("couldn't login next account, aborting rotation")
 			break
 		}
-		client, err := twitterAPI.CreateTwitterClientWithCookies(next.GetCookiesHttp())
+		px := proxy.NextProxy()
+		client, err := twitterAPI.CreateTwitterClientWithCookies(next.GetCookiesHttp(), px)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).
 				Msg("couldn't create client for rotated account")
@@ -263,9 +266,9 @@ func RetweetById(ctx context.Context, tweetID string, svc dummyaccount.Service) 
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium account.")
 			return err
 		}
-
+		px := proxy.NextProxy()
 		// Create Twitter API client using the cookies from the Selenium account
-		twitterAPIClient, _ := twitterAPI.CreateTwitterClientWithCookies(selAccount.GetCookiesHttp())
+		twitterAPIClient, _ := twitterAPI.CreateTwitterClientWithCookies(selAccount.GetCookiesHttp(), px)
 
 		success, err := twitterAPIClient.Retweet(tweetID)
 		if err != nil {

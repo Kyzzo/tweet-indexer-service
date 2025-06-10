@@ -3,7 +3,6 @@ package tracking
 import (
 	"context"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"fmt"
@@ -12,35 +11,13 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/indexer/model"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	twitterAPI "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api"
+	"github.com/jeetdotso/tweet-indexer-service/scrape/proxy"
 	"github.com/tidwall/gjson"
 )
 
 type GrokMonitor struct {
 	twitterAPI *twitterAPI.GrokClient
 	ss         *dummyaccount.SelAccount
-}
-
-var (
-	proxyList = []string{
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8001",
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8002",
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8003",
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8004",
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8005",
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8006",
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8007",
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8008",
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8009",
-		"http://user-kdb2012_EZH07:tWJjzARtM%2Bk8xr%2B@dc.oxylabs.io:8010",
-		"",
-	}
-	rrIndex uint64
-)
-
-func nextProxy() string {
-	// simple round-robin
-	n := atomic.AddUint64(&rrIndex, 1)
-	return proxyList[int(n)%len(proxyList)]
 }
 
 var (
@@ -71,10 +48,10 @@ func NewGrokMonitor(ctx context.Context, svc dummyaccount.Service, url string) (
 
 func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent, handleResponse func(ctx context.Context, twt *model.GrokEvent)) {
 	// Step 1: Create a new Grok conversation
-	proxy := nextProxy()
-	convId, err := gm.twitterAPI.CreateConversation(proxy)
+	px := proxy.NextProxy()
+	convId, err := gm.twitterAPI.CreateConversation(px)
 	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("url", gm.twitterAPI.BaseURL).Str("proxy", proxy).Msg("Error creating Grok conversation.")
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("url", gm.twitterAPI.BaseURL).Str("proxy", px).Msg("Error creating Grok conversation.")
 		return
 	}
 
@@ -86,12 +63,12 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	)
 
 	// TODO: change to intial
-	resp, _, err2 = gm.twitterAPI.SendMessage(getMsg2(tweet), convId, "grok-3", proxy, false)
+	resp, _, err2 = gm.twitterAPI.SendMessage(getMsg2(tweet), convId, "grok-3", px, false)
 	promV := gjson.Parse(resp).Get("isPromoting")
 	if resp == "" || !promV.Exists() {
 		//retry by geting convo history
 		for attempt := 1; attempt <= maxPromptRetries; attempt++ {
-			resp, err2 = gm.twitterAPI.GetConversationHistory(convId, proxy)
+			resp, err2 = gm.twitterAPI.GetConversationHistory(convId, px)
 			if resp != "" {
 				break
 			}
@@ -113,7 +90,7 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	}
 	promV = gjson.Parse(resp).Get("isPromoting")
 	if !promV.Exists() {
-		_ = gm.ProcessResponse(ctx, convId, tweet, proxy, handleResponse)
+		_ = gm.ProcessResponse(ctx, convId, tweet, px, handleResponse)
 		return
 	}
 	gr := model.GrokEvent{
@@ -144,7 +121,7 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 
 }
 
-func (gm *GrokMonitor) ProcessResponse(ctx context.Context, grokId string, tweet *model.TweetEvent, proxy string, handleResponse func(ctx context.Context, twt *model.GrokEvent)) string {
+func (gm *GrokMonitor) ProcessResponse(ctx context.Context, grokId string, tweet *model.TweetEvent, px string, handleResponse func(ctx context.Context, twt *model.GrokEvent)) string {
 	maxAttempts := 5
 	retryDelay := 5 * time.Second
 	defer func() {
@@ -155,7 +132,7 @@ func (gm *GrokMonitor) ProcessResponse(ctx context.Context, grokId string, tweet
 	}()
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 
-		resp, err := gm.twitterAPI.GetConversationHistory(grokId, proxy)
+		resp, err := gm.twitterAPI.GetConversationHistory(grokId, px)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Attempt %d: Error fetching Grok response.", attempt)
 			time.Sleep(retryDelay)

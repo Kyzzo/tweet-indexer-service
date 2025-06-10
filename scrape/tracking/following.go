@@ -33,7 +33,7 @@ func NewFollowingMonitor(ctx context.Context, svc dummyaccount.Service) (*Follow
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium account.")
 		return nil, nil, err
 	}
-	client, _ := twitterAPI.CreateTwitterClientWithCookies(sel.GetCookiesHttp())
+	client, _ := twitterAPI.CreateTwitterClientWithCookies(sel.GetCookiesHttp(), "")
 	return &FollowingMonitor{twitterAPI: client}, sel, nil
 }
 

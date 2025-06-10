@@ -14,6 +14,7 @@ import (
 	twitterAPI "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api"
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 	tweetParsers "github.com/jeetdotso/tweet-indexer-service/scrape/internals/parsers/tweet"
+	"github.com/jeetdotso/tweet-indexer-service/scrape/proxy"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 )
 
@@ -31,7 +32,8 @@ func NewTweetsRollBack(ctx context.Context, maxRetries int, retryDelay time.Dura
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium account.")
 		return nil, nil, err
 	}
-	twitterAPIClient, err := twitterAPI.CreateTwitterClientWithCookies(selAccount.GetCookiesHttp())
+	px := proxy.NextProxy()
+	twitterAPIClient, err := twitterAPI.CreateTwitterClientWithCookies(selAccount.GetCookiesHttp(), px)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error creating Twitter client.")
 		return nil, nil, err
@@ -420,8 +422,9 @@ func (trb *TweetsRollBack) SwitchAccounts(ctx context.Context) error {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error logging in to next Selenium account")
 		return err
 	}
+	px := proxy.NextProxy()
 
-	twitterAPIClient, err := twitterAPI.CreateTwitterClientWithCookies(selAcc.GetCookiesHttp())
+	twitterAPIClient, err := twitterAPI.CreateTwitterClientWithCookies(selAcc.GetCookiesHttp(), px)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error creating Twitter client.")
 		selErr := trb.svc.LogOut(ctx, selAcc.UserName)
