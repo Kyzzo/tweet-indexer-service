@@ -274,6 +274,9 @@ func (trb *TweetsRollBack) processTweetEntries(
 				}
 				times = append(times, ts)
 				if limitDate.After(ts) {
+					if ti.TweetType == twitterTypes.Tweet || ti.TweetType == twitterTypes.Quote {
+						return true
+					}
 					continue
 				}
 
@@ -318,6 +321,9 @@ func (trb *TweetsRollBack) processTweetEntries(
 
 					times = append(times, ts)
 					if limitDate.After(ts) {
+						if ti.TweetType == twitterTypes.Tweet || ti.TweetType == twitterTypes.Quote {
+							return true
+						}
 						continue
 					}
 					*tweets = append(*tweets, ti)
