@@ -35,6 +35,7 @@ type TokenTweetIndexer struct {
 	twtPrf         twitterprofile.Repository
 	checkpointRepo repository.UserCheckPointRepository
 	dummSvc        dummyaccount.Service
+	rawTweetRepo   repository.RawTweetRepository
 	grokSvc        GrokIndexer
 }
 
@@ -44,10 +45,12 @@ func NewTokenTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpc
 	twtPrf := twitterprofile.NewRepository(conn)
 	dummSvc := dummyaccount.NewSeleniumService(conn, &cfg)
 	grokSvc := NewGrokIndexer(cfg, conn, dummSvc, sassIndx)
+	rawTweetRepo := repository.NewRawTweetRepo(conn)
 
 	return TokenTweetIndexer{
 		tweetRepo:      tweetRepo,
 		checkpointRepo: checkpointRepo,
+		rawTweetRepo:   rawTweetRepo,
 		dummSvc:        dummSvc,
 		twtPrf:         twtPrf,
 		grokSvc:        grokSvc,
@@ -242,7 +245,6 @@ func (ti TokenTweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twi
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching user checkpoint")
 	}
 	if twt == nil || twt.ID == "" {
-		// fmt.Println("No tweets found for user, skipping checkpoint update: ", user.Handle)
 		return time.Now().Add(-time.Minute * 5)
 	}
 	checkpoint := model.UserCheckPoint{
@@ -261,7 +263,6 @@ func (ti TokenTweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twi
 
 // ✅ **Handler for new tweets (passed as a callback)**
 func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitterTypes.TweetInfo) {
-	// fmt.Println("HandleTweetEvent called ", tweet.ID)
 	if tweet == nil {
 		logg.Log.Error().Caller().Ctx(ctx).Msg("HandleTweetEvent received a nil tweet")
 		return
@@ -270,7 +271,6 @@ func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitter
 		logg.Log.Error().Caller().Ctx(ctx).Msg("HandleTweetEvent received a tweet with empty ID")
 		return
 	}
-
 	tweetEvent := mapper.MapTweetToEvent(tweet)
 	if tweetEvent.CreatedAt.Before(time.Now().Add(-time.Hour)) {
 		logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", tweetEvent.ID).Msg("Tweet event is too old, skipping.")
@@ -285,20 +285,7 @@ func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitter
 		// logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", tweetEvent.ID).Msg("Tweet event already exists.")
 		return
 	}
-	go ti.streamTweet(ctx, tweetEvent)
-
-	// **Update User Checkpoint**
-	checkpoint := model.UserCheckPoint{
-		ID:                 tweet.UserID,
-		LastTweet:          tweet.ID,
-		LastTweetCreatedAt: tweetEvent.CreatedAt,
-		UpdatedAt:          time.Now(),
-	}
-
-	_, err = ti.checkpointRepo.UpdateOrSave(ctx, checkpoint)
-	if err != nil {
-		logg.Log.Error().Caller().Err(err).Ctx(ctx).Msg("Error updating user checkpoint")
-	}
+	go ti.streamTweet(ctx, tweetEvent, tweet.FullInterface)
 
 }
 
@@ -323,11 +310,20 @@ func (ti TokenTweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet 
 
 }
 
-func (ti TokenTweetIndexer) streamTweet(ctx context.Context, tweetEvent model.TweetEvent) {
+func (ti TokenTweetIndexer) streamTweet(ctx context.Context, tweetEvent model.TweetEvent, rawEntry string) {
 	_, err := ti.tweetRepo.SaveOrUpdate(ctx, tweetEvent)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to save tweet event.")
 		return
+	}
+	_, err = ti.rawTweetRepo.SaveOrUpdate(ctx, model.RawTweet{
+		ID:       tweetEvent.ID,
+		TweetID:  tweetEvent.TweetID,
+		UserID:   tweetEvent.UserID,
+		RawEntry: rawEntry,
+	})
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to save raw tweet event.")
 	}
 
 	go ti.grokSvc.Start(ctx, &tweetEvent, nil)
