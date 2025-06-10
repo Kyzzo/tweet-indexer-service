@@ -24,6 +24,13 @@ type TweetEvent struct {
 	MediaAttachments  []interface{}          `bson:"media_attachments"`
 }
 
+type RawTweet struct {
+	ID       string `bson:"_id"`
+	TweetID  string `bson:"tweet_id"`
+	UserID   string `bson:"user_id"`
+	RawEntry string `bson:"raw_entry"`
+}
+
 type UserCheckPoint struct {
 	ID                 string    `bson:"_id"`
 	LastTweet          string    `bson:"last_tweet"`
@@ -53,6 +60,10 @@ type RetweetEvent struct {
 	ID        string    `bson:"_id"`
 	CreatedAt time.Time `bson:"created_at"`
 	UserId    string    `bson:"user_id"`
+}
+
+func (rt *RawTweet) GetID() any {
+	return rt.ID
 }
 
 func (te *TweetEvent) GetID() any {
