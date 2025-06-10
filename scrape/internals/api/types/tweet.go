@@ -24,4 +24,5 @@ type TweetInfo struct {
 	RetweetedByID     string         `json:"retweeted_by_id" bson:"retweeted_by_id"`
 	RetweetedUsername string         `json:"retweeted_username" bson:"retweeted_username"`
 	MediaAttachments  *[]interface{} `json:"media_attachments" bson:"media_attachments"`
+	FullInterface     string         `json:"full_interface" bson:"full_interface"`
 }
