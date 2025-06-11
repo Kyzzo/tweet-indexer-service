@@ -22,6 +22,7 @@ type GrokMonitor struct {
 
 var (
 	// msgToSend = "Hello there"
+	profileMsg    = "@%s \n\nWould you classify this profile as a Trader, Memecoin Speculator, Influencer, Company, Institution, or None?Respond with only one. Output in raw text strictly adhere to the following schema {\"isCategorized\"}"
 	msgToSend2    = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question.\n\nText: %s\n %s. output in raw txt strictly follow the following schema {\"isPromoting\": bool,\"tokensPromoted\": list or null}"
 	launchCoinMsg = "https://x.com/%s/status/%s\nDoes this tweet reference the cryptocurrency token ‘Launchcoin’ at all? Respond in this format\n\nisPromoting: true| false"
 	msgToSend     = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question. Respond in this format:\n\nisPromoting: true| false \ntokensPromoted: tokens (separated by commas))"
@@ -120,6 +121,58 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	handleResponse(ctx, &gr)
 
 }
+func (gm *GrokMonitor) GetProfileResponse(ctx context.Context, prfId string, profileName string, handleResponse func(ctx context.Context, id string, tag string)) {
+	// Step 1: Create a new Grok conversation
+	px := proxy.NextProxy()
+	convId, err := gm.twitterAPI.CreateConversation(px)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("url", gm.twitterAPI.BaseURL).Str("proxy", px).Msg("Error creating Grok conversation.")
+		return
+	}
+
+	// Step 4: Send the actual Grok prompt
+	const maxPromptRetries = 5
+	var (
+		err2 error
+		resp string
+	)
+
+	// TODO: change to intial
+	resp, _, err2 = gm.twitterAPI.SendMessage(getProfileMsg(profileName), convId, "grok-3", px, false)
+	promV := gjson.Parse(resp).Get("isCategorized")
+	if resp == "" || !promV.Exists() {
+		//retry by geting convo history
+		for attempt := 1; attempt <= maxPromptRetries; attempt++ {
+			resp, err2 = gm.twitterAPI.GetConversationHistory(convId, px)
+			if resp != "" {
+				break
+			}
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+
+	}
+
+	if err2 != nil {
+		logg.Log.
+			Error().
+			Caller().
+			Ctx(ctx).
+			Err(err2).
+			Str("profileID", prfId).
+			Str("SelAcct", gm.ss.UserName).
+			Msg("Failed to send Grok prompt initial after retries")
+		return
+	}
+	promV = gjson.Parse(resp).Get("isCategorized")
+	if !promV.Exists() {
+		_ = gm.ProcessProfileResponse(ctx, convId, prfId, profileName, px, handleResponse)
+		return
+	}
+	gr := gjson.Parse(resp).Get("isCategorized").String()
+
+	handleResponse(ctx, prfId, gr)
+
+}
 
 func (gm *GrokMonitor) ProcessResponse(ctx context.Context, grokId string, tweet *model.TweetEvent, px string, handleResponse func(ctx context.Context, twt *model.GrokEvent)) string {
 	maxAttempts := 5
@@ -179,6 +232,42 @@ func (gm *GrokMonitor) ProcessResponse(ctx context.Context, grokId string, tweet
 	logg.Log.Error().Caller().Ctx(ctx).Msg("Max retries reached. Grok response not available.")
 	return ""
 }
+func (gm *GrokMonitor) ProcessProfileResponse(ctx context.Context, grokId string, prfId string, profileName string, px string, handleResponse func(ctx context.Context, id string, tag string)) string {
+	maxAttempts := 5
+	retryDelay := 5 * time.Second
+	defer func() {
+		recover := recover()
+		if recover != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Msgf("Recovered from panic: %v", recover)
+		}
+	}()
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+
+		resp, err := gm.twitterAPI.GetConversationHistory(grokId, px)
+		if err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Attempt %d: Error fetching Grok response.", attempt)
+			time.Sleep(retryDelay)
+			continue
+		}
+		if resp == "" {
+			time.Sleep(retryDelay)
+			continue
+		}
+		promV := gjson.Parse(resp).Get("isCategorized")
+		if !promV.Exists() {
+			time.Sleep(retryDelay)
+			continue
+		}
+		gr := gjson.Parse(resp).Get("isCategorized").String()
+
+		handleResponse(ctx, prfId, gr)
+		return ""
+
+	}
+
+	logg.Log.Error().Caller().Ctx(ctx).Msg("Max retries reached. Grok response not available.")
+	return ""
+}
 
 func getMsg(tweet *model.TweetEvent) string {
 	return msgToSend
@@ -203,6 +292,9 @@ func getMsg2(tweet *model.TweetEvent) string {
 func getUrl(tweet *model.TweetEvent) string {
 	return fmt.Sprintf("https://x.com/%s/status/%s", tweet.UserName, tweet.ID)
 }
+func getProfileMsg(profileName string) string {
+	return fmt.Sprintf(profileMsg, profileName)
+}
 
 func GetGrokCheck(ctx context.Context, tweet *model.TweetEvent, svc dummyaccount.Service, url string, handleResponse func(ctx context.Context, twt *model.GrokEvent)) {
 	// Fetch a Selenium account
@@ -218,4 +310,18 @@ func GetGrokCheck(ctx context.Context, tweet *model.TweetEvent, svc dummyaccount
 	// Start monitoring tweets
 	monitor.GetResponse(ctx, tweet, handleResponse)
 
+}
+func GetGrokProfile(ctx context.Context, prfID, prfUsername string, svc dummyaccount.Service, url string, handleResponse func(ctx context.Context, id string, tag string)) {
+	// Fetch a Selenium account
+	monitor, selAccount, err := NewGrokMonitor(ctx, svc, url)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to get account monitor.")
+		return
+	}
+	defer func() {
+		_ = svc.LogOut(ctx, selAccount.UserName)
+	}()
+
+	// Start monitoring tweets
+	monitor.GetProfileResponse(ctx, prfID, prfUsername, handleResponse)
 }
