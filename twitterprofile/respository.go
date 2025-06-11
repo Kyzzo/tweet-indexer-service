@@ -589,7 +589,6 @@ func (repo *MongoRepository) FindFetchedProfiles(
 		sortField = "captured_at"
 	}
 	opts.SetSort(bson.D{{Key: sortField, Value: dir}})
-	fmt.Println("Sort field:", sortField, "Direction:", dir)
 	// 3) Execute the query
 	cursor, err := repo.conn.Datastore.
 		Collection(repo.fetchRepo.Collection).
