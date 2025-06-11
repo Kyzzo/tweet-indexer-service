@@ -2,6 +2,7 @@ package twitterprofile
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jeetdotso/tweet-indexer-service/logg"
@@ -15,6 +16,7 @@ import (
 )
 
 const Collection = "twitterprofiles"
+const FetchedCollection = "twitterprofiles_fetched"
 
 type Repository interface {
 	UpdateOrInsert(ctx context.Context, usr *TwitterProfile) error
@@ -34,17 +36,31 @@ type Repository interface {
 	FindByIsTrackingPagination(ctx context.Context, page, size int64, isTracking bool) (*persistence.Pagination[[]*TwitterProfile], error)
 	UpsertTwitterProfile(ctx context.Context, u twiterTypes.FollowingUser) error
 	FindAllById(ctx context.Context, ids []string) ([]TwitterProfile, error)
+	/////Fecthed///////////////
+	UpdateOrInsertFetched(ctx context.Context, usr *FetchedProfile) error
+	FindFetchedByUserId(ctx context.Context, twitterId string) (*FetchedProfile, error)
+	FindFetchedUserByTwitterHandle(ctx context.Context, twitterHandle string) (*FetchedProfile, error)
+	FindFetchedUserByName(ctx context.Context, usrName string) (*FetchedProfile, error)
+	FindFetchedProfiles(ctx context.Context, q *FetchedProfileQuery) (*persistence.Pagination[[]*FetchedProfile], error)
+	UpsertFetchedProfile(ctx context.Context, u twiterTypes.FollowingUser) error
+	ChangeStatusById(ctx context.Context, id string, status int) error
+	UpdateTagById(ctx context.Context, id string, tag string) error
+	GetAllByStatus(ctx context.Context, status int) ([]*FetchedProfile, error)
+	GetAllByTag(ctx context.Context, tag string) ([]*FetchedProfile, error)
 }
 type MongoRepository struct {
-	conn    *mongodb.MongoConnection
-	absrepo *persistence.AbstractMongoRepository[*TwitterProfile]
+	conn      *mongodb.MongoConnection
+	absrepo   *persistence.AbstractMongoRepository[*TwitterProfile]
+	fetchRepo *persistence.AbstractMongoRepository[*FetchedProfile]
 }
 
 func NewRepository(conn *mongodb.MongoConnection) Repository {
 	absrepo := persistence.NewAbstractRepository[*TwitterProfile](conn, Collection)
+	fetchRepo := persistence.NewAbstractRepository[*FetchedProfile](conn, FetchedCollection)
 	return &MongoRepository{
-		conn:    conn,
-		absrepo: absrepo,
+		conn:      conn,
+		absrepo:   absrepo,
+		fetchRepo: fetchRepo,
 	}
 }
 
@@ -475,4 +491,229 @@ func (repo *MongoRepository) FindAllById(ctx context.Context, ids []string) ([]T
 		users = append(users, user)
 	}
 	return users, nil
+}
+
+// ///////////////Fecthed///////////////
+func (repo *MongoRepository) UpdateOrInsertFetched(ctx context.Context, usr *FetchedProfile) error {
+	err := repo.fetchRepo.InsertOrUpdate(usr)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating or inserting fetched user.")
+		return err
+	}
+	return nil
+}
+
+func (repo *MongoRepository) FindFetchedByUserId(ctx context.Context, twitterId string) (*FetchedProfile, error) {
+	filter := bson.M{"_id": twitterId}
+	var usr FetchedProfile
+	res := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).FindOne(ctx, filter)
+	if err := res.Decode(&usr); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding fetched user result.")
+		return nil, err
+	}
+	return &usr, nil
+}
+
+func (repo *MongoRepository) FindFetchedUserByTwitterHandle(ctx context.Context, twitterHandle string) (*FetchedProfile, error) {
+	filter := bson.M{"handle": twitterHandle}
+	var usr FetchedProfile
+	res := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).FindOne(ctx, filter)
+	if err := res.Decode(&usr); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding fetched user result.")
+		return nil, err
+	}
+	return &usr, nil
+}
+
+func (repo *MongoRepository) FindFetchedUserByName(ctx context.Context, usrName string) (*FetchedProfile, error) {
+	filter := bson.M{"user_name": usrName}
+	var usr FetchedProfile
+	res := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).FindOne(ctx, filter)
+	if err := res.Decode(&usr); err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding fetched user result.")
+		return nil, err
+	}
+
+	return &usr, nil
+}
+
+func (repo *MongoRepository) FindFetchedProfiles(
+	ctx context.Context,
+	q *FetchedProfileQuery,
+) (*persistence.Pagination[[]*FetchedProfile], error) {
+	// 1) Build the filter document
+	filter := bson.M{}
+
+	if q.Status != nil {
+		filter["status"] = *q.Status
+	}
+	if len(q.Tags) > 0 {
+		// since Profile.Tag is a single string,
+		// this matches any profile whose tag is in the list
+		filter["tag"] = bson.M{"$in": q.Tags}
+	}
+	// follower count range
+	if q.FollowersMin != nil || q.FollowersMax != nil {
+		rng := bson.M{}
+		if q.FollowersMin != nil {
+			rng["$gte"] = *q.FollowersMin
+		}
+		if q.FollowersMax != nil {
+			rng["$lte"] = *q.FollowersMax
+		}
+		filter["follower_count"] = rng
+	}
+
+	// 2) Build the find options (skip, limit, sort)
+	opts := options.Find().
+		SetSkip((q.Page - 1) * q.Size).
+		SetLimit(q.Size)
+
+	// determine sort direction
+	dir := -1
+	if q.Asc {
+		dir = 1
+	}
+	// default to captured_at if no field given
+	sortField := q.SortField
+	if sortField == "" {
+		sortField = "captured_at"
+	}
+	opts.SetSort(bson.D{{Key: sortField, Value: dir}})
+	fmt.Println("Sort field:", sortField, "Direction:", dir)
+	// 3) Execute the query
+	cursor, err := repo.conn.Datastore.
+		Collection(repo.fetchRepo.Collection).
+		Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("FindFetchedProfiles: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var users []*FetchedProfile
+	for cursor.Next(ctx) {
+		var u FetchedProfile
+		if err := cursor.Decode(&u); err != nil {
+			return nil, fmt.Errorf("FindFetchedProfiles decode: %w", err)
+		}
+		users = append(users, &u)
+	}
+
+	// 4) Get total count for pagination metadata
+	total, err := repo.conn.Datastore.
+		Collection(repo.fetchRepo.Collection).
+		CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("FindFetchedProfiles count: %w", err)
+	}
+
+	// 5) Wrap it up in your pagination type
+	pag := persistence.NewPagination[[]*FetchedProfile](
+		q.Page, q.Size, users, total,
+	)
+	return pag, nil
+}
+
+func (repo *MongoRepository) UpsertFetchedProfile(ctx context.Context, u twiterTypes.FollowingUser) error {
+	now := time.Now().UTC()
+
+	filter := bson.D{{Key: "_id", Value: u.ID}}
+	update := bson.D{
+		// always overwrite these fields from the API
+		{Key: "$set", Value: bson.D{
+			{Key: "user_name", Value: u.UserName},
+			{Key: "handle", Value: u.Handle},
+			{Key: "profile_img", Value: u.ProfileImg},
+			{Key: "follower_count", Value: u.Followers},
+			{Key: "following_count", Value: u.Following},
+			{Key: "verified", Value: u.Verified},
+			// bump your updated_at every time
+			{Key: "updated_at", Value: now},
+		}},
+		// only on insert, set these once:
+		{Key: "$setOnInsert", Value: bson.D{
+			{Key: "captured_at", Value: now},
+			{Key: "tag", Value: ""},
+			{Key: "status", Value: 0},
+		}},
+	}
+
+	opts := options.Update().SetUpsert(true)
+	_, err := repo.conn.Datastore.
+		Collection(repo.fetchRepo.Collection).
+		UpdateOne(ctx, filter, update, opts)
+	return err
+}
+
+func (repo *MongoRepository) ChangeStatusById(ctx context.Context, id string, status int) error {
+	filter := bson.M{"_id": id}
+	update := bson.M{"$set": bson.M{"status": status}}
+	_, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).UpdateOne(ctx, filter, update)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error changing status by ID.")
+		return err
+	}
+	return nil
+}
+
+func (repo *MongoRepository) GetAllByStatus(ctx context.Context, status int) ([]*FetchedProfile, error) {
+	filter := bson.M{"status": status}
+	cursor, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).Find(ctx, filter)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error getting all by status.")
+		return nil, err
+	}
+
+	var profiles []*FetchedProfile
+	for cursor.Next(ctx) {
+		var profile FetchedProfile
+		err = cursor.Decode(&profile)
+		if err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding profile.")
+			return nil, err
+		}
+		profiles = append(profiles, &profile)
+	}
+	return profiles, nil
+}
+
+func (repo *MongoRepository) GetAllByTag(ctx context.Context, tag string) ([]*FetchedProfile, error) {
+	filter := bson.M{"tag": tag}
+	cursor, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).Find(ctx, filter)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error getting all by tag.")
+		return nil, err
+	}
+
+	var profiles []*FetchedProfile
+	for cursor.Next(ctx) {
+		var profile FetchedProfile
+		err = cursor.Decode(&profile)
+		if err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding profile.")
+			return nil, err
+		}
+		profiles = append(profiles, &profile)
+	}
+	return profiles, nil
+}
+
+func (repo *MongoRepository) UpdateTagById(ctx context.Context, id string, tag string) error {
+	filter := bson.M{"_id": id}
+	update := bson.M{"$set": bson.M{"tag": tag}}
+	_, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).UpdateOne(ctx, filter, update)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating tag by ID.")
+		return err
+	}
+	return nil
 }
