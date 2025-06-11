@@ -34,6 +34,7 @@ func main() {
 	ctx := context.Background()
 
 	dummSvc := dummyaccount.NewSeleniumService(&conn, cfg)
+
 	dummSvc.ResetAll(ctx)
 	// // //Register Scrapes
 	_, saasIdx := registerScrapes(ctx, *cfg, &conn, grpcconn)
@@ -43,16 +44,17 @@ func main() {
 	// //Register Schedulers
 	go registerSchedulers(cfg, &conn, dummSvc, saasIdx)
 
-	//Register http endpoints
-	registerHttp(cfg, &conn)
+	// //Register http endpoints
+	registerHttp(cfg, &conn, dummSvc)
 }
 
-func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
+func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dummyaccount.Service) {
 	//deps
 	var (
 		api = service.NewTweetAPI(*cfg, conn)
 	)
 	twtCtrl := controller.NewTweetIndexApi(api)
+	adminCtrl := controller.NewAdminController(cfg, conn, dummSvc)
 
 	r := gin.Default()
 	r.GET("/", func(c *gin.Context) {
@@ -64,9 +66,11 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection) {
 	r.GET("/public/indexer/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"response": "Tweet indexer Health OK"})
 	})
-
 	r.POST("/public/indexer/monitors/replay/:userId", twtCtrl.ReplayEventsByUser)
 
+	r.POST("/public/indexer/admin/:username", adminCtrl.AddList)
+	r.PUT("/public/indexer/admin/status/:id", adminCtrl.ChangeStatusById)
+	r.GET("/public/indexer/admin/list", adminCtrl.GetList)
 	err := r.Run(":" + cfg.Server.Port)
 	if err != nil {
 		log.Panic().Err(err).Msg("Error starting server")
@@ -105,6 +109,7 @@ func Schedulers(conn *mongodb.MongoConnection, cfg *config.Config, dummSvc dummy
 		healthCheck = sched.NewAccountHealthScheduler(cfg, conn, dummSvc)
 		scrapeCycle = sched.NewScrapeCycleScheduler(cfg, conn)
 		followCycle = sched.NewFollowingCycleScheduler(cfg, conn, dummSvc)
+		prfAnalysis = sched.NewProfileAnalysis(cfg, conn, dummSvc)
 	)
 
 	return []scheduler.Scheduler{
@@ -112,6 +117,7 @@ func Schedulers(conn *mongodb.MongoConnection, cfg *config.Config, dummSvc dummy
 		healthCheck,
 		followCycle,
 		scrapeCycle,
+		prfAnalysis,
 	}
 }
 
