@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/jeetdotso/tweet-indexer-service/config"
@@ -13,6 +14,7 @@ import (
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 	"github.com/jeetdotso/tweet-indexer-service/scrape/tracking"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
+	"github.com/jeetdotso/tweet-indexer-service/util"
 )
 
 // receive who's following by followed id
@@ -21,8 +23,10 @@ import (
 // get followed by list via id w/ excluding ids
 type FollowingIndexer struct {
 	twtPrf   twitterprofile.Repository
+	prfSvc   Profile
 	dummSvc  dummyaccount.Service
 	follRepo repository.FollowingRepository
+	URL      string // URL for the grok service, can be set in config
 }
 
 const (
@@ -40,16 +44,21 @@ const (
 	SINGLE_USER_HANDLER_COUNT = 5
 	SINGLE_USER_MAX_RETRIES   = 4
 	SINGLE_USER_RETRY_DELAY   = 2 * time.Second
+
+	THRESHOLD_FOLLOWING_COUNT = 30000 // Threshold for the following count for saving
 )
 
 func NewFollowingIndexer(cfg config.Config, conn *mongodb.MongoConnection, dummySvc dummyaccount.Service) FollowingIndexer {
 	follRepo := repository.NewFollowingRepository(conn)
 	twtPrf := twitterprofile.NewRepository(conn)
+	prfSvc := NewProfile(cfg, conn, dummySvc)
 
 	return FollowingIndexer{
 		follRepo: follRepo,
 		dummSvc:  dummySvc,
 		twtPrf:   twtPrf,
+		prfSvc:   prfSvc,
+		URL:      cfg.Services.GrokAPIServices.Host,
 	}
 }
 
@@ -123,4 +132,106 @@ func (f *FollowingIndexer) HandleFollowing(ctx context.Context, followedByID str
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to upsert twitter profile.")
 		return
 	}
+}
+
+func (f *FollowingIndexer) ScrapeFollowingListByIdForAdmin(ctx context.Context, userId string) {
+	if userId == "" {
+		logg.Log.Warn().Caller().Ctx(ctx).Msg("User ID is empty, skipping.")
+		return
+	}
+	//check if userId already exists in the following repo
+	exists, err := f.follRepo.ExistsByUserId(ctx, userId)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to check if user ID exists in following repo.")
+		return
+	}
+	if exists {
+		logg.Log.Info().Caller().Ctx(ctx).Msgf("User ID %s already exists in following repo, skipping.", userId)
+		return
+	}
+	userIds := map[string]struct{}{userId: {}}
+	tracking.MonitorFollowingsPipeline(ctx, userIds, SINGLE_USER_WORKER_COUNT, SINGLE_PAGE_HANDLER_COUNT, SINGLE_USER_MAX_RETRIES, SINGLE_USER_RETRY_DELAY, f.HandleManualFollowings, f.dummSvc)
+}
+
+func (f *FollowingIndexer) HandleManualFollowings(ctx context.Context, followedByID string, user twitterTypes.FollowingUser) {
+	if user.ID == "" {
+		logg.Log.Warn().Caller().Ctx(ctx).Msg("User ID is empty, skipping.")
+		return
+	}
+	if user.Followers < THRESHOLD_FOLLOWING_COUNT {
+		return // Skip if followers count is below threshold
+	}
+
+	//add to fetched prf
+	if err := f.twtPrf.UpsertFetchedProfile(ctx, user); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to upsert twitter profile.")
+		return
+	}
+	// ctl := util.CreateBackgroundContextFromExisting(ctx)
+	// go f.RunGrokOnPrf(ctl, user.ID, user.Handle)
+	return
+}
+
+func (f *FollowingIndexer) GetByUsernameAndSaveFollowings(ctx context.Context, username string) error {
+	if username == "" {
+		logg.Log.Warn().Caller().Ctx(ctx).Msg("Username is empty, skipping.")
+		return nil
+	}
+	user, err := f.prfSvc.GetProfileByUsername(ctx, username)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to get user ID by username.")
+		return err
+	}
+	if user == nil || user.ID == "" {
+		logg.Log.Error().Caller().Ctx(ctx).Err(ErrProfileNotFound).Msgf("User ID for %s is empty, skipping.", username)
+		return ErrProfileNotFound
+	}
+	ctu := util.CreateBackgroundContextFromExisting(ctx)
+	go f.ScrapeFollowingListByIdForAdmin(ctu, user.ID)
+	return nil
+}
+
+func (f *FollowingIndexer) RunGrokOnPrf(ctx context.Context, userId, userName string) {
+
+	tracking.GetGrokProfile(ctx, userId, userName, f.dummSvc, f.URL, f.HandleGrokProfile)
+}
+
+func (f *FollowingIndexer) HandleGrokProfile(ctx context.Context, id string, tag string) {
+	if id == "" || tag == "" {
+		logg.Log.Warn().Caller().Ctx(ctx).Msg("ID or tag is empty, skipping.")
+		return
+	}
+	rTag := strings.ToLower(strings.TrimSpace(tag))
+
+	if err := f.twtPrf.UpdateTagById(ctx, id, rTag); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Failed to update tag for ID: %s", id)
+		return
+	}
+}
+
+func (f *FollowingIndexer) GetEmptyTagsAndRunGrok(ctx context.Context) error {
+	// Get all profiles with empty tags
+	profiles, err := f.twtPrf.GetAllByTag(ctx, "")
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to find profiles with empty tags.")
+		return err
+	}
+	if len(profiles) == 0 {
+		logg.Log.Info().Caller().Ctx(ctx).Msg("No profiles with empty tags found, skipping.")
+		return nil
+	}
+	sem := make(chan struct{}, SINGLE_PAGE_WORKER_COUNT)
+	for _, profile := range profiles {
+		sem <- struct{}{}
+		ctu := util.CreateBackgroundContextFromExisting(ctx)
+		go func(p *twitterprofile.FetchedProfile) {
+			defer func() { <-sem }()
+			f.RunGrokOnPrf(ctu, p.ID, p.UserName)
+		}(profile)
+	}
+	// Wait for all goroutines to finish
+	for i := 0; i < cap(sem); i++ {
+		sem <- struct{}{}
+	}
+	return nil
 }
