@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jeetdotso/tweet-indexer-service/config"
@@ -64,8 +65,8 @@ func (ctrl AdminController) GetList(ctx *gin.Context) {
 		}
 	}
 
-	tags := ctx.QueryArray("tag") // ?tag=x&tag=y
-
+	tags := ctx.Query("tag")        // ?tag=x&tag=y
+	tag := strings.Split(tags, ",") // split by comma if multiple tags are provided
 	var minFPtr, maxFPtr *int
 	if s := ctx.Query("min_followers"); s != "" {
 		if v, err := strconv.Atoi(s); err == nil {
@@ -85,7 +86,7 @@ func (ctrl AdminController) GetList(ctx *gin.Context) {
 		SortField:    sortField,
 		Asc:          asc,
 		Status:       statusPtr,
-		Tags:         tags,
+		Tags:         tag,
 		FollowersMin: minFPtr,
 		FollowersMax: maxFPtr,
 	}
