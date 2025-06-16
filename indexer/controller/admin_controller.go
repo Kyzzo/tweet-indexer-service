@@ -129,3 +129,27 @@ func (ctrl AdminController) ChangeStatusById(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Status updated successfully", "id": id})
 }
+
+func (ctrl AdminController) ChangeStatusMultiple(ctx *gin.Context) {
+	var req struct {
+		Ids    []string `json:"ids"`
+		Status int      `json:"status"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	if len(req.Ids) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids cannot be empty"})
+		return
+	}
+
+	err := ctrl.ftcPrf.ChangeStatusMultiple(ctx.Request.Context(), req.Ids, req.Status)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Statuses updated successfully", "ids": req.Ids})
+}

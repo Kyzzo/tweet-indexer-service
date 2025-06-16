@@ -70,6 +70,7 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dum
 
 	r.POST("/public/indexer/admin/:username", adminCtrl.AddList)
 	r.PUT("/public/indexer/admin/status/:id", adminCtrl.ChangeStatusById)
+	r.PUT("/public/indexer/admin/status/multi", adminCtrl.ChangeStatusMultiple)
 	r.GET("/public/indexer/admin/list", adminCtrl.GetList)
 	err := r.Run(":" + cfg.Server.Port)
 	if err != nil {

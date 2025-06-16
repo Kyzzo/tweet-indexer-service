@@ -44,6 +44,7 @@ type Repository interface {
 	FindFetchedProfiles(ctx context.Context, q *FetchedProfileQuery) (*persistence.Pagination[[]*FetchedProfile], error)
 	UpsertFetchedProfile(ctx context.Context, u twiterTypes.FollowingUser) error
 	ChangeStatusById(ctx context.Context, id string, status int) error
+	ChangeStatusMultiple(ctx context.Context, ids []string, status int) error
 	UpdateTagById(ctx context.Context, id string, tag string) error
 	GetAllByStatus(ctx context.Context, status int) ([]*FetchedProfile, error)
 	GetAllByTag(ctx context.Context, tag string) ([]*FetchedProfile, error)
@@ -712,6 +713,21 @@ func (repo *MongoRepository) UpdateTagById(ctx context.Context, id string, tag s
 	_, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).UpdateOne(ctx, filter, update)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating tag by ID.")
+		return err
+	}
+	return nil
+}
+
+func (repo *MongoRepository) ChangeStatusMultiple(ctx context.Context, ids []string, status int) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("ids cannot be empty")
+	}
+
+	filter := bson.M{"_id": bson.M{"$in": ids}}
+	update := bson.M{"$set": bson.M{"status": status}}
+	_, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).UpdateMany(ctx, filter, update)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error changing status for multiple IDs.")
 		return err
 	}
 	return nil
