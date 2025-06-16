@@ -153,3 +153,29 @@ func (ctrl AdminController) ChangeStatusMultiple(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Statuses updated successfully", "ids": req.Ids})
 }
+
+func (ctrl AdminController) GetTop1500(ctx *gin.Context) {
+
+	// 1) grab & default your page/size/sort/asc
+	page, err := strconv.ParseInt(ctx.DefaultQuery("page", "1"), 10, 64)
+	if err != nil || page < 1 {
+		page = 1
+	}
+	size, err := strconv.ParseInt(ctx.DefaultQuery("size", "1500"), 10, 64)
+	if err != nil || size < 1 {
+		size = 1500
+	}
+
+	tags := ctx.Query("tag")        // ?tag=x&tag=y
+	tag := strings.Split(tags, ",") // split by comma if multiple tags are provided
+
+	// 2) call your service / repo
+	resultPage, err := ctrl.ftcPrf.GetTopHit(ctx.Request.Context(), page, size, tag)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 3) return it
+	ctx.JSON(http.StatusOK, resultPage)
+}

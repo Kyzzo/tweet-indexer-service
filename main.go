@@ -72,6 +72,7 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dum
 	r.PUT("/public/indexer/admin/status/:id", adminCtrl.ChangeStatusById)
 	r.PUT("/public/indexer/admin/status/multi", adminCtrl.ChangeStatusMultiple)
 	r.GET("/public/indexer/admin/list", adminCtrl.GetList)
+	r.GET("/public/indexer/admin/top", adminCtrl.GetTop1500)
 	err := r.Run(":" + cfg.Server.Port)
 	if err != nil {
 		log.Panic().Err(err).Msg("Error starting server")
