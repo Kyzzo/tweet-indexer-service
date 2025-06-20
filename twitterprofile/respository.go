@@ -49,6 +49,7 @@ type Repository interface {
 	GetTopHit(ctx context.Context, page, limit int64, tags []string) (*persistence.Pagination[[]*FetchedProfile], error)
 	GetAllByStatus(ctx context.Context, status int) ([]*FetchedProfile, error)
 	GetAllByTag(ctx context.Context, tag string) ([]*FetchedProfile, error)
+	GetUniqueTags(ctx context.Context) ([]string, error)
 }
 type MongoRepository struct {
 	conn      *mongodb.MongoConnection
@@ -819,4 +820,23 @@ func (repo *MongoRepository) GetTopHit(
 		Size:       limit,
 		TotalCount: total,
 	}, nil
+}
+
+func (repo *MongoRepository) GetUniqueTags(ctx context.Context) ([]string, error) {
+	// Use distinct to get unique tags
+	tags, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).Distinct(ctx, "tag", bson.M{})
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error getting unique tags.")
+		return nil, err
+	}
+
+	// Convert interface{} to []string
+	var uniqueTags []string
+	for _, tag := range tags {
+		if strTag, ok := tag.(string); ok {
+			uniqueTags = append(uniqueTags, strTag)
+		}
+	}
+
+	return uniqueTags, nil
 }

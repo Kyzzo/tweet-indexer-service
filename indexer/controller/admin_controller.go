@@ -179,3 +179,34 @@ func (ctrl AdminController) GetTop1500(ctx *gin.Context) {
 	// 3) return it
 	ctx.JSON(http.StatusOK, resultPage)
 }
+
+func (ctrl AdminController) FindTagOptions(ctx *gin.Context) {
+	uniqueTags, err := ctrl.ftcPrf.GetUniqueTags(ctx.Request.Context())
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, uniqueTags)
+}
+
+func (ctrl AdminController) ChangeTagByID(ctx *gin.Context) {
+	id := ctx.Param("id")
+	if id == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+
+	tag := ctx.Query("tag")
+	if tag == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "tag is required"})
+		return
+	}
+
+	err := ctrl.ftcPrf.UpdateTagById(ctx.Request.Context(), id, tag)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Tag updated successfully", "id": id})
+}

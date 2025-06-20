@@ -67,9 +67,10 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dum
 		c.JSON(http.StatusOK, gin.H{"response": "Tweet indexer Health OK"})
 	})
 	r.POST("/public/indexer/monitors/replay/:userId", twtCtrl.ReplayEventsByUser)
-
 	r.POST("/public/indexer/admin/:username", adminCtrl.AddList)
 	r.PUT("/public/indexer/admin/status/:id", adminCtrl.ChangeStatusById)
+	r.PUT("/public/indexer/admin/tag/:id", adminCtrl.ChangeTagByID)
+	r.GET("/public/indexer/admin/unique/tags", adminCtrl.FindTagOptions)
 	r.PUT("/public/indexer/admin/status/multi", adminCtrl.ChangeStatusMultiple)
 	r.GET("/public/indexer/admin/list", adminCtrl.GetList)
 	r.GET("/public/indexer/admin/top", adminCtrl.GetTop1500)
