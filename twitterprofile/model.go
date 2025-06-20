@@ -21,9 +21,10 @@ func (f *TwitterProfile) GetID() any {
 }
 
 const (
-	NEUTRAL_PROFILE = 0
+	NEW_PROFILE     = 0
 	REMOVED_PROFILE = 1
 	ADDED_PROFILE   = 2
+	NEUTRAL_PROFILE = 3
 )
 
 type FetchedProfile struct {

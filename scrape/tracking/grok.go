@@ -22,7 +22,7 @@ type GrokMonitor struct {
 
 var (
 	// msgToSend = "Hello there"
-	profileMsg    = "@%s \n\nWould you classify this profile as a Trader, Memecoin Speculator, Influencer, Company, Institution, or None?Respond with only one. Output in raw text strictly adhere to the following schema {\"isCategorized\"}"
+	profileMsg    = "@%s \n\nWould you classify this profile as a Trader, Memecoin Speculator, Influencer, Company, or None?Respond with only one. Output in raw text strictly adhere to the following schema {\"isCategorized\"}"
 	msgToSend2    = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question.\n\nText: %s\n %s. output in raw txt strictly follow the following schema {\"isPromoting\": bool,\"tokensPromoted\": list or null}"
 	launchCoinMsg = "https://x.com/%s/status/%s\nDoes this tweet reference the cryptocurrency token ‘Launchcoin’ at all? Respond in this format\n\nisPromoting: true| false"
 	msgToSend     = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question. Respond in this format:\n\nisPromoting: true| false \ntokensPromoted: tokens (separated by commas))"
