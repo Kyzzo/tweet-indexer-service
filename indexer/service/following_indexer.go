@@ -203,9 +203,11 @@ func (f *FollowingIndexer) GetByUsernamesAndCheckMulti(ctx context.Context, user
 		user, err := f.prfSvc.GetProfileByUsername(ctx, username)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to get user ID by username.")
+			continue
 		}
 		if user == nil || user.ID == "" {
 			logg.Log.Error().Caller().Ctx(ctx).Err(ErrProfileNotFound).Msgf("User ID for %s is empty, skipping.", username)
+			continue
 		}
 		fl := user.ToFollowingUser()
 		f.HandleManualFollowings(ctx, user.ID, fl)
