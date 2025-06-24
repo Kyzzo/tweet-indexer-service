@@ -43,6 +43,29 @@ func (ctrl AdminController) AddList(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "Following list added successfully", "username": username})
 }
 
+func (ctrl AdminController) AddMultiManual(ctx *gin.Context) {
+	var req struct {
+		Usernames []string `json:"usernames"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	if len(req.Usernames) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "usernames cannot be empty"})
+		return
+	}
+
+	err := ctrl.fllIdx.GetByUsernamesAndCheckMulti(ctx, req.Usernames)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, gin.H{"message": "Following lists added successfully", "success": true})
+}
+
 func (ctrl AdminController) GetList(ctx *gin.Context) {
 	// 1) grab & default your page/size/sort/asc
 	page, err := strconv.ParseInt(ctx.DefaultQuery("page", "1"), 10, 64)

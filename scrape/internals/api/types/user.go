@@ -32,3 +32,15 @@ type TrackedUser struct {
 	CreatedAt    time.Time `bson:"created_at" json:"created_at"`
 	UpdatedAt    time.Time `bson:"updated_at" json:"updated_at"`
 }
+
+func (usr *User) ToFollowingUser() FollowingUser {
+	return FollowingUser{
+		ID:         usr.ID,
+		UserName:   usr.UserName,
+		Handle:     usr.Handle,
+		ProfileImg: usr.ProfileImg,
+		Followers:  usr.Followers,
+		Following:  usr.Following,
+		Verified:   usr.Verified,
+	}
+}

@@ -73,6 +73,7 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dum
 	r.GET("/public/indexer/admin/unique/tags", adminCtrl.FindTagOptions)
 	r.PUT("/public/indexer/admin/status/multi", adminCtrl.ChangeStatusMultiple)
 	r.GET("/public/indexer/admin/list", adminCtrl.GetList)
+	r.POST("/public/indexer/admin/multi/manual", adminCtrl.AddMultiManual)
 	r.GET("/public/indexer/admin/top", adminCtrl.GetTop1500)
 	err := r.Run(":" + cfg.Server.Port)
 	if err != nil {

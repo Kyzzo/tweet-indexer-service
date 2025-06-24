@@ -190,6 +190,28 @@ func (f *FollowingIndexer) GetByUsernameAndSaveFollowings(ctx context.Context, u
 	go f.ScrapeFollowingListByIdForAdmin(ctu, user.ID)
 	return nil
 }
+func (f *FollowingIndexer) GetByUsernamesAndCheckMulti(ctx context.Context, usernames []string) error {
+	if len(usernames) == 0 {
+		logg.Log.Warn().Caller().Ctx(ctx).Msg("Username is empty, skipping.")
+		return nil
+	}
+	for _, username := range usernames {
+		if username == "" {
+			logg.Log.Warn().Caller().Ctx(ctx).Msg("Username is empty, skipping.")
+			continue
+		}
+		user, err := f.prfSvc.GetProfileByUsername(ctx, username)
+		if err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to get user ID by username.")
+		}
+		if user == nil || user.ID == "" {
+			logg.Log.Error().Caller().Ctx(ctx).Err(ErrProfileNotFound).Msgf("User ID for %s is empty, skipping.", username)
+		}
+		fl := user.ToFollowingUser()
+		f.HandleManualFollowings(ctx, user.ID, fl)
+	}
+	return nil
+}
 
 func (f *FollowingIndexer) RunGrokOnPrf(ctx context.Context, userId, userName string) {
 
