@@ -45,7 +45,7 @@ const (
 	SINGLE_USER_MAX_RETRIES   = 4
 	SINGLE_USER_RETRY_DELAY   = 2 * time.Second
 
-	THRESHOLD_FOLLOWING_COUNT = 30000 // Threshold for the following count for saving
+	THRESHOLD_FOLLOWING_COUNT = 15000 // Threshold for the following count for saving
 )
 
 func NewFollowingIndexer(cfg config.Config, conn *mongodb.MongoConnection, dummySvc dummyaccount.Service) FollowingIndexer {
