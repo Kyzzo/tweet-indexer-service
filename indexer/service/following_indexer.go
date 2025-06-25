@@ -195,22 +195,42 @@ func (f *FollowingIndexer) GetByUsernamesAndCheckMulti(ctx context.Context, user
 		logg.Log.Warn().Caller().Ctx(ctx).Msg("Username is empty, skipping.")
 		return nil
 	}
+	sem := make(chan struct{}, 10)
+	ctl := util.CreateBackgroundContextFromExisting(ctx)
 	for _, username := range usernames {
 		if username == "" {
 			logg.Log.Warn().Caller().Ctx(ctx).Msg("Username is empty, skipping.")
 			continue
 		}
-		user, err := f.prfSvc.GetProfileByUsername(ctx, username)
-		if err != nil {
-			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to get user ID by username.")
-			continue
-		}
-		if user == nil || user.ID == "" {
-			logg.Log.Error().Caller().Ctx(ctx).Err(ErrProfileNotFound).Msgf("User ID for %s is empty, skipping.", username)
-			continue
-		}
-		fl := user.ToFollowingUser()
-		f.HandleManualFollowings(ctx, user.ID, fl)
+		sem <- struct{}{}
+		go func(ctx context.Context, un string) {
+			defer func() { <-sem }()
+			//check repo
+			exists, err := f.twtPrf.FindUserByTwitterHandle(ctx, un)
+			if err != nil {
+				logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Failed to check if user %s exists in twitter profile repo.", un)
+				return
+			}
+			if exists != nil {
+				logg.Log.Info().Caller().Ctx(ctx).Msgf("User %s already exists in twitter profile repo, skipping.", un)
+				return
+			}
+			user, err := f.prfSvc.GetProfileByUsername(ctx, un)
+			if err != nil {
+				logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to get user ID by username.")
+				return
+			}
+			if user == nil || user.ID == "" {
+				logg.Log.Error().Caller().Ctx(ctx).Err(ErrProfileNotFound).Msgf("User ID for %s is empty, skipping.", un)
+				return
+			}
+			fl := user.ToFollowingUser()
+			f.HandleManualFollowings(ctx, user.ID, fl)
+		}(ctl, username)
+	}
+	// Wait for all goroutines to finish
+	for i := 0; i < cap(sem); i++ {
+		sem <- struct{}{}
 	}
 	return nil
 }

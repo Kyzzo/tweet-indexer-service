@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,8 +10,10 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/config"
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/service"
+	"github.com/jeetdotso/tweet-indexer-service/logg"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
+	"github.com/jeetdotso/tweet-indexer-service/util"
 )
 
 type AdminController struct {
@@ -56,12 +59,13 @@ func (ctrl AdminController) AddMultiManual(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "usernames cannot be empty"})
 		return
 	}
-
-	err := ctrl.fllIdx.GetByUsernamesAndCheckMulti(ctx, req.Usernames)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	ctl := util.CreateBackgroundContextFromExisting(ctx.Request.Context())
+	go func(ctx context.Context, usernames []string) {
+		err := ctrl.fllIdx.GetByUsernamesAndCheckMulti(ctx, req.Usernames)
+		if err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error adding multiple following lists")
+		}
+	}(ctl, req.Usernames)
 
 	ctx.JSON(http.StatusCreated, gin.H{"message": "Following lists added successfully", "success": true})
 }
