@@ -12,6 +12,7 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/indexer/service"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
+	"github.com/jeetdotso/tweet-indexer-service/shared"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 	"github.com/jeetdotso/tweet-indexer-service/util"
 )
@@ -190,14 +191,14 @@ func (ctrl AdminController) GetTop1500(ctx *gin.Context) {
 	}
 	size, err := strconv.ParseInt(ctx.DefaultQuery("size", "1500"), 10, 64)
 	if err != nil || size < 1 {
-		size = 1500
+		size = shared.MAX_ACCOUNTS_RUN
 	}
 
-	tags := ctx.Query("tag")        // ?tag=x&tag=y
-	tag := strings.Split(tags, ",") // split by comma if multiple tags are provided
+	tag := ctx.Query("tag")         // ?tag=x&tag=y
+	tags := strings.Split(tag, ",") // split by comma if multiple tags are provided
 
 	// 2) call your service / repo
-	resultPage, err := ctrl.ftcPrf.GetTopHit(ctx.Request.Context(), page, size, tag)
+	resultPage, err := ctrl.ftcPrf.GetTopHit(ctx.Request.Context(), page, size, tags)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
