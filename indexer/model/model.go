@@ -8,6 +8,31 @@ import (
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 )
 
+type CategoryType int
+
+const (
+	CategoryTypeMEME CategoryType = iota
+	CategoryTypeTRADER
+	CategoryTypeGrokToken
+)
+
+func (c CategoryType) String() string {
+	switch c {
+	case CategoryTypeMEME:
+		return "MEME"
+	case CategoryTypeTRADER:
+		return "TRADER"
+	case CategoryTypeGrokToken:
+		return "GrokToken"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+func ToCategoryString(cat CategoryType) string {
+	return cat.String()
+}
+
 type TweetEvent struct {
 	ID                string                 `bson:"_id"`
 	TweetID           string                 `bson:"tweet_id"`
@@ -21,6 +46,7 @@ type TweetEvent struct {
 	TweetType         twitterTypes.TweetType `bson:"tweet_type"`
 	RetweetedByID     string                 `bson:"retweet_user_id"`
 	RetweetedUsername string                 `bson:"retweet_username"`
+	Category          CategoryType           `bson:"category"`
 	MediaAttachments  []interface{}          `bson:"media_attachments"`
 }
 
@@ -39,14 +65,15 @@ type UserCheckPoint struct {
 }
 
 type GrokEvent struct {
-	ID              string    `bson:"_id"`
-	IsShill         bool      `bson:"is_shill"`
-	TokensMentioned []string  `bson:"tokens_mentioned"`
-	TokensShilled   []string  `bson:"tokens_shilled"`
-	UserId          string    `bson:"user_id"`
-	CreatedAt       time.Time `bson:"created_at"`
-	DummyAccount    string    `bson:"dummy_account"`
-	ConvoID         string    `bson:"convo_id"`
+	ID              string       `bson:"_id"`
+	IsShill         bool         `bson:"is_shill"`
+	TokensMentioned []string     `bson:"tokens_mentioned"`
+	TokensShilled   []string     `bson:"tokens_shilled"`
+	UserId          string       `bson:"user_id"`
+	CreatedAt       time.Time    `bson:"created_at"`
+	DummyAccount    string       `bson:"dummy_account"`
+	Category        CategoryType `bson:"category"`
+	ConvoID         string       `bson:"convo_id"`
 }
 type GrokTokenEvent struct {
 	ID           string    `bson:"_id"`
@@ -121,18 +148,20 @@ func (ge *GrokEvent) ToProto() *proto.GrokEvent {
 }
 
 type SaasEvent struct {
-	ID            string    `bson:"_id"`
-	TweetId       string    `bson:"tweet_id"`
-	TweetUrl      string    `bson:"tweet_url"`
-	Text          string    `bson:"text"`
-	UserId        string    `bson:"user_id"`
-	TweetType     string    `bson:"tweet_type"`
-	TokensShilled []string  `bson:"tokens_shilled"`
-	CreatedAt     time.Time `bson:"created_at"`
+	ID            string       `bson:"_id"`
+	TweetId       string       `bson:"tweet_id"`
+	TweetUrl      string       `bson:"tweet_url"`
+	Text          string       `bson:"text"`
+	UserId        string       `bson:"user_id"`
+	UserName      string       `bson:"username"`
+	TweetType     string       `bson:"tweet_type"`
+	TokensShilled []string     `bson:"tokens_shilled"`
+	CreatedAt     time.Time    `bson:"created_at"`
+	Category      CategoryType `bson:"category_type"`
 }
 
-func (se *SaasEvent) ToProto() *proto.SaasEvent {
-	return &proto.SaasEvent{
+func (se *SaasEvent) ToProto() *proto.TweetEventInterface {
+	return &proto.TweetEventInterface{
 		Id:            se.ID,
 		Text:          se.Text,
 		TweetId:       se.TweetId,
@@ -141,6 +170,8 @@ func (se *SaasEvent) ToProto() *proto.SaasEvent {
 		TweetType:     se.TweetType,
 		TokensShilled: se.TokensShilled,
 		CreatedAt:     se.CreatedAt.Format(time.RFC3339),
+		Username:      se.UserName,
+		Category:      se.Category.String(),
 	}
 }
 
