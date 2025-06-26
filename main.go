@@ -17,6 +17,7 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	"github.com/jeetdotso/tweet-indexer-service/proto/grpcsaasentry"
 	"github.com/jeetdotso/tweet-indexer-service/scheduler"
+	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 	"github.com/robfig/cron"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
@@ -34,15 +35,15 @@ func main() {
 	ctx := context.Background()
 
 	dummSvc := dummyaccount.NewSeleniumService(&conn, cfg)
-
+	var tagsToRun []twitterprofile.TagType = []twitterprofile.TagType{twitterprofile.TAG_TRADER}
 	dummSvc.ResetAll(ctx)
-	// // //Register Scrapes
-	_, saasIdx := registerScrapes(ctx, *cfg, &conn, grpcconn)
+	// // // //Register Scrapes
+	_, saasIdx := registerScrapes(ctx, *cfg, &conn, grpcconn, tagsToRun)
 
-	//Register GRPC server
+	// //Register GRPC server
 	go registerGrpcServer(cfg, &conn, grpcconn, dummSvc)
 	// //Register Schedulers
-	go registerSchedulers(cfg, &conn, dummSvc, saasIdx)
+	go registerSchedulers(cfg, &conn, dummSvc, saasIdx, tagsToRun)
 
 	// //Register http endpoints
 	registerHttp(cfg, &conn, dummSvc)
@@ -81,7 +82,7 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dum
 	}
 }
 
-func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap) ([]string, service.SaasIndexer) {
+func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap, tagsToRun []twitterprofile.TagType) ([]string, service.SaasIndexer) {
 	// deps
 	var (
 		saasIndexer = service.NewSaasIndexer(cfg, conn)
@@ -90,29 +91,31 @@ func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.Mongo
 
 	var topicNames []string
 	// add topic names
-	topicNames = append(topicNames, saasIndexer.TopicName())
+	topicNames = append(topicNames, saasIndexer.TopicNames()...)
 
 	// start tweet indexer
-	// go tokenTweetIndexer.Start(ctx)
+	// for _, tag := range tagsToRun {
+	// 	go tokenTweetIndexer.Start(ctx, tag)
+	// }
 
 	return topicNames, saasIndexer
 }
 
-func registerSchedulers(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dummyaccount.Service, saasIdx service.SaasIndexer) {
+func registerSchedulers(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dummyaccount.Service, saasIdx service.SaasIndexer, tags []twitterprofile.TagType) {
 	c := cron.New()
-	jobs := Schedulers(conn, cfg, dummSvc, saasIdx)
+	jobs := Schedulers(conn, cfg, dummSvc, saasIdx, tags)
 	for _, job := range jobs {
 		_ = c.AddFunc(job.Expression(), job.Execute)
 	}
 	c.Start()
 }
 
-func Schedulers(conn *mongodb.MongoConnection, cfg *config.Config, dummSvc dummyaccount.Service, saasIdx service.SaasIndexer) []scheduler.Scheduler {
+func Schedulers(conn *mongodb.MongoConnection, cfg *config.Config, dummSvc dummyaccount.Service, saasIdx service.SaasIndexer, tags []twitterprofile.TagType) []scheduler.Scheduler {
 	var (
 		grokRetry   = sched.NewGrokRetryScheduler(cfg, conn, dummSvc, saasIdx)
 		healthCheck = sched.NewAccountHealthScheduler(cfg, conn, dummSvc)
-		scrapeCycle = sched.NewScrapeCycleScheduler(cfg, conn)
-		followCycle = sched.NewFollowingCycleScheduler(cfg, conn, dummSvc)
+		scrapeCycle = sched.NewScrapeCycleScheduler(cfg, conn, tags)
+		followCycle = sched.NewFollowingCycleScheduler(cfg, conn, dummSvc, tags)
 		prfAnalysis = sched.NewProfileAnalysis(cfg, conn, dummSvc)
 	)
 
