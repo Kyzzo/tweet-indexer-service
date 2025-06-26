@@ -20,12 +20,23 @@ func (f *TwitterProfile) GetID() any {
 	return f.ID
 }
 
+type TagType string
+
+const (
+	TAG_TRADER     TagType = "trader"
+	TAG_MEME       TagType = "memecoin speculator"
+	TAG_INFLUENCER TagType = "influencer"
+)
 const (
 	NEW_PROFILE     = 0
 	REMOVED_PROFILE = 1
 	ADDED_PROFILE   = 2
 	NEUTRAL_PROFILE = 3
 )
+
+func (t TagType) String() string {
+	return string(t)
+}
 
 type FetchedProfile struct {
 	ID         string    `bson:"_id" json:"id"`
