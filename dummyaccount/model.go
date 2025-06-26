@@ -21,7 +21,9 @@ type SelAccount struct {
 	BoughtFrom   string            `bson:"bought_from" json:"bought_from"`
 	Group        int               `bson:"group" json:"group"`
 	LastLoggedIn time.Time         `bson:"last_log_in" json:"last_log_in"`
+	LastGrok     time.Time         `bson:"last_grok" json:"last_grok"`
 	InUse        bool              `bson:"in_use" json:"in_use"`
+	InGrokUse    bool              `bson:"in_grok_use" json:"in_grok_use"`
 	Cookies      []selenium.Cookie `bson:"cookies" json:"cookies"`
 	TwoFAPre     string            `bson:"two_fa_pre" json:"two_fa_pre"`
 	TwoFACode    string            `bson:"two_fa_code" json:"two_fa_code"`
@@ -37,7 +39,9 @@ func NewAccount(username, password string, group int, from string) *SelAccount {
 		UserName:     username,
 		Password:     password,
 		InUse:        false,
+		InGrokUse:    false,
 		LastLoggedIn: time.Now(),
+		LastGrok:     time.Now(),
 		Cookies:      []selenium.Cookie{},
 		Group:        group,
 		UpdatedAt:    time.Now(),
@@ -49,7 +53,9 @@ func NewTwoFaAccount(username, password string, group int, twoFaPre, from string
 		UserName:     username,
 		Password:     password,
 		InUse:        false,
+		InGrokUse:    false,
 		LastLoggedIn: time.Now(),
+		LastGrok:     time.Now(),
 		Cookies:      []selenium.Cookie{},
 		TwoFAPre:     twoFaPre,
 		Group:        group,

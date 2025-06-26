@@ -19,7 +19,9 @@ type Service interface {
 	FindGroups(ctx context.Context) (int, error)
 	LogInToNext(ctx context.Context) (*SelAccount, error)
 	LogInToNextGroup(ctx context.Context, group int) (*SelAccount, error)
+	LogInToNextGrok(ctx context.Context, group int) (*SelAccount, error)
 	LogOut(ctx context.Context, userName string) error
+	LogGrokOut(ctx context.Context, userName string) error
 	SwitchGroup(ctx context.Context, username string, group int) error
 	FindByUsername(ctx context.Context, username string) (*SelAccount, error)
 	ResetAll(ctx context.Context) error
@@ -169,6 +171,17 @@ func (s *ServiceDefaultImpl) LogInToNextGroup(ctx context.Context, group int) (*
 
 	return sl, nil
 }
+func (s *ServiceDefaultImpl) LogInToNextGrok(ctx context.Context, group int) (*SelAccount, error) {
+	sl, err := s.repo.AcquireNextGrokByGroup(ctx, group)
+	if err != nil {
+		return nil, err
+	}
+	if sl == nil {
+		return nil, errEmptyAccount
+	}
+
+	return sl, nil
+}
 
 func (s *ServiceDefaultImpl) LogOut(ctx context.Context, userName string) error {
 
@@ -186,6 +199,29 @@ func (s *ServiceDefaultImpl) LogOut(ctx context.Context, userName string) error 
 	sl.InUse = false
 	sl.UpdatedAt = time.Now()
 	sl.LastLoggedIn = time.Now()
+	err = s.repo.UpdateOrInsert(ctx, sl)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating selenium account.")
+		return err
+	}
+	return nil
+}
+func (s *ServiceDefaultImpl) LogGrokOut(ctx context.Context, userName string) error {
+
+	//get in use first
+
+	sl, err := s.repo.FindById(ctx, userName)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding next selenium account.")
+		return err
+	}
+	if sl == nil {
+		return errEmptyAccount
+	}
+
+	sl.InGrokUse = false
+	sl.UpdatedAt = time.Now()
+	sl.LastGrok = time.Now()
 	err = s.repo.UpdateOrInsert(ctx, sl)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating selenium account.")

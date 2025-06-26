@@ -25,6 +25,7 @@ type Repository interface {
 	FindAllByGroup(ctx context.Context, group int) ([]*SelAccount, error)
 	UpdateAllToGroup(ctx context.Context, group int) error
 	AcquireNextByGroup(ctx context.Context, group int) (*SelAccount, error)
+	AcquireNextGrokByGroup(ctx context.Context, group int) (*SelAccount, error)
 }
 type MongoRepository struct {
 	conn    *mongodb.MongoConnection
@@ -116,9 +117,42 @@ func (repo *MongoRepository) AcquireNextByGroup(ctx context.Context, group int) 
 		"updated_at":     time.Now(),
 	}}
 
-	// 3) We want to pick the lowest-updated_at first:
+	// 3) We want to pick the lowest-last_logged_in first:
 	opts := options.FindOneAndUpdate().
-		SetSort(bson.M{"updated_at": 1}).
+		SetSort(bson.M{"last_logged_in": 1}).
+		SetReturnDocument(options.After) // return the doc *after* update
+
+	var acct SelAccount
+	err := repo.conn.Datastore.
+		Collection(repo.absrepo.Collection).
+		FindOneAndUpdate(ctx, filter, update, opts).
+		Decode(&acct)
+
+	if err == mongo.ErrNoDocuments {
+		return nil, nil // no free accounts
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &acct, nil
+}
+func (repo *MongoRepository) AcquireNextGrokByGroup(ctx context.Context, group int) (*SelAccount, error) {
+	// 1) Filter for group membership and in_use=false
+	filter := bson.M{
+		"group":       bson.M{"$in": bson.A{group}},
+		"in_grok_use": false,
+	}
+
+	// 2) Update sets last_grok and bumps timestamps
+	update := bson.M{"$set": bson.M{
+		"last_grok":   time.Now(),
+		"in_grok_use": true,
+		"updated_at":  time.Now(),
+	}}
+
+	// 3) We want to pick the lowest-last_grok first:
+	opts := options.FindOneAndUpdate().
+		SetSort(bson.M{"last_grok": 1}).
 		SetReturnDocument(options.After) // return the doc *after* update
 
 	var acct SelAccount
@@ -169,12 +203,13 @@ func (repo *MongoRepository) FindGroupNumber(ctx context.Context) (int, error) {
 }
 
 func (repo *MongoRepository) ResetAll(ctx context.Context) error {
-	filter := bson.M{"in_use": true}
+	filter := bson.M{}
 
 	update := bson.M{
 		"$set": bson.M{
-			"in_use":     false,
-			"updated_at": time.Now(),
+			"in_use":      false,
+			"in_grok_use": false,
+			"updated_at":  time.Now(),
 		},
 	}
 
