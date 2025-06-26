@@ -14,6 +14,7 @@ import (
 	redis2 "github.com/jeetdotso/tweet-indexer-service/memory/redis"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	"github.com/jeetdotso/tweet-indexer-service/scheduler"
+	"github.com/jeetdotso/tweet-indexer-service/shared"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 	"github.com/redis/go-redis/v9"
 )
@@ -25,24 +26,31 @@ type FollowingCycle struct {
 	follSvc     service.FollowingIndexer
 	twtPrf      twitterprofile.Repository
 	follRepo    repository.FollowingRepository
+	tags        []string
 }
 
 const (
 	FollowingCycleKey = "following-cycle-lock-sync-daily-job"
 )
 
-func NewFollowingCycleScheduler(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dummyaccount.Service) scheduler.Scheduler {
+func NewFollowingCycleScheduler(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dummyaccount.Service, tags []twitterprofile.TagType) scheduler.Scheduler {
 	locker := redislock.New(redis.NewClient(redis2.GetRedisOptions(cfg.Memory)))
 	followCycle := cycle.NewCycleService(conn, cfg)
 	followSvc := service.NewFollowingIndexer(*cfg, conn, dummSvc)
 	twtPrf := twitterprofile.NewRepository(conn)
 	follRepo := repository.NewFollowingRepository(conn)
+	// Convert tags to string slice
+	var tagStrings []string
+	for _, tag := range tags {
+		tagStrings = append(tagStrings, string(tag))
+	}
 	return &FollowingCycle{
 		locker:      locker,
 		followCycle: followCycle,
 		dummSvc:     dummSvc,
 		follSvc:     followSvc,
 		twtPrf:      twtPrf,
+		tags:        tagStrings,
 		follRepo:    follRepo,
 	}
 }
@@ -183,11 +191,15 @@ func (s *FollowingCycle) daily(ctx context.Context, dc *cycle.FollowingCycle) {
 
 // Helper methods
 func (s *FollowingCycle) getInfluencerCount(ctx context.Context) (int, error) {
-	profiles, err := s.twtPrf.FindAllUsers(ctx)
-	if err != nil {
-		return 0, err
+	var totalCount int
+	for _, tag := range s.tags {
+		profiles, err := s.twtPrf.GetTopHitRaw(ctx, shared.MAX_ACCOUNTS_RUN, []string{tag})
+		if err != nil {
+			return 0, err
+		}
+		totalCount += len(profiles)
 	}
-	return len(profiles), nil
+	return totalCount, nil
 }
 
 func (s *FollowingCycle) getUniqueUserAccounts(ctx context.Context) (int, error) {
