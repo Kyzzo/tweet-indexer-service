@@ -24,7 +24,7 @@ var (
 	// msgToSend = "Hello there"
 	profileMsg    = "@%s \n\nWould you classify this profile as a Trader, Memecoin Speculator, Influencer, Company, or None?Respond with only one. Output in raw text strictly adhere to the following schema {\"isCategorized\"}"
 	memeMsg       = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question.\n\nText: %s\n %s. output in raw txt strictly follow the following schema {\"isPromoting\": bool,\"tokensPromoted\": list or null}"
-	traderMsg     = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question.\n\nText: %s\n %s. output in raw txt strictly follow the following schema {\"isPromoting\": bool,\"tokensPromoted\": list or null}"
+	traderMsg     = "For a cryptocurrency trader, useful analysis typically involves commentary on any of these 6 factors: price movements, volume trends, technical indicators, onchain indicators, fundamental catalysts, or the mere presence of a price chart image. Your job is to analyze this tweet and determine whether any of the 6 criteria are being met. If so, the tweet will be defined as useful analysis.  If the tweet is being defined as useful analysis, we what to know what token ticker(s) are being referenced.\n\nText: %s\n %s Produce a response in raw text strictly adhering to the following schema {\"isUsefulAnalysis\": bool,\"tokensMentioned\": list or null}"
 	launchCoinMsg = "https://x.com/%s/status/%s\nDoes this tweet reference the cryptocurrency token ‘Launchcoin’ at all? Respond in this format\n\nisPromoting: true| false"
 	msgToSend     = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question. Respond in this format:\n\nisPromoting: true| false \ntokensPromoted: tokens (separated by commas))"
 )
@@ -65,16 +65,24 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	)
 
 	// TODO: change to intial
-	var msgToSend string
+	var (
+		msgToSend string
+		key       string
+		tokenRec  string
+	)
 	switch tweet.Category {
 	case model.CategoryTypeMEME:
 		msgToSend = memeMessage(tweet)
+		key = "isPromoting"
+		tokenRec = "tokensPromoted"
 	default:
 		msgToSend = traderMessage(tweet)
+		key = "isUsefulAnalysis"
+		tokenRec = "tokensMentioned"
 	}
 
 	resp, _, err2 = gm.twitterAPI.SendMessage(msgToSend, convId, "grok-3", px, false)
-	promV := gjson.Parse(resp).Get("isPromoting")
+	promV := gjson.Parse(resp).Get(key)
 	if resp == "" || !promV.Exists() {
 		//retry by geting convo history
 		for attempt := 1; attempt <= maxPromptRetries; attempt++ {
@@ -98,24 +106,16 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 			Msg("Failed to send Grok prompt initial after retries")
 		return
 	}
-	promV = gjson.Parse(resp).Get("isPromoting")
+	promV = gjson.Parse(resp).Get(key)
 	if !promV.Exists() {
-		_ = gm.ProcessResponse(ctx, convId, tweet, px, handleResponse)
+		_ = gm.ProcessResponse(ctx, key, tokenRec, convId, tweet, px, handleResponse)
 		return
 	}
 	gr := model.GrokEvent{
 		ID:      tweet.TweetID,
-		IsShill: gjson.Parse(resp).Get("isPromoting").Bool(),
+		IsShill: gjson.Parse(resp).Get(key).Bool(),
 		TokensShilled: func() []string {
-			results := gjson.Parse(resp).Get("tokensPromoted").Array()
-			tokens := make([]string, len(results))
-			for i, result := range results {
-				tokens[i] = result.String()
-			}
-			return tokens
-		}(),
-		TokensMentioned: func() []string {
-			results := gjson.Parse(resp).Get("tokensMentioned").Array()
+			results := gjson.Parse(resp).Get(tokenRec).Array()
 			tokens := make([]string, len(results))
 			for i, result := range results {
 				tokens[i] = result.String()
@@ -183,8 +183,8 @@ func (gm *GrokMonitor) GetProfileResponse(ctx context.Context, prfId string, pro
 
 }
 
-func (gm *GrokMonitor) ProcessResponse(ctx context.Context, grokId string, tweet *model.TweetEvent, px string, handleResponse func(ctx context.Context, twt *model.GrokEvent)) string {
-	maxAttempts := 5
+func (gm *GrokMonitor) ProcessResponse(ctx context.Context, key, tokenRec, grokId string, tweet *model.TweetEvent, px string, handleResponse func(ctx context.Context, twt *model.GrokEvent)) string {
+	maxAttempts := 3
 	retryDelay := 5 * time.Second
 	defer func() {
 		recover := recover()
@@ -204,24 +204,16 @@ func (gm *GrokMonitor) ProcessResponse(ctx context.Context, grokId string, tweet
 			time.Sleep(retryDelay)
 			continue
 		}
-		promV := gjson.Parse(resp).Get("isPromoting")
+		promV := gjson.Parse(resp).Get(key)
 		if !promV.Exists() {
 			time.Sleep(retryDelay)
 			continue
 		}
 		gr := &model.GrokEvent{
 			ID:      tweet.TweetID,
-			IsShill: gjson.Parse(resp).Get("isPromoting").Bool(),
+			IsShill: gjson.Parse(resp).Get(key).Bool(),
 			TokensShilled: func() []string {
-				results := gjson.Parse(resp).Get("tokensPromoted").Array()
-				tokens := make([]string, len(results))
-				for i, result := range results {
-					tokens[i] = result.String()
-				}
-				return tokens
-			}(),
-			TokensMentioned: func() []string {
-				results := gjson.Parse(resp).Get("tokensMentioned").Array()
+				results := gjson.Parse(resp).Get(tokenRec).Array()
 				tokens := make([]string, len(results))
 				for i, result := range results {
 					tokens[i] = result.String()
