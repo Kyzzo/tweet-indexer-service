@@ -90,13 +90,14 @@ func (trb *TweetsRollBack) Tweets(ctx context.Context, username string, targetDa
 
 func TweetsPipeline(
 	ctx context.Context,
+	tag twitterprofile.TagType,
 	users map[string]time.Time,
 	fetcherCount int, // max concurrent fetchers
 	handlerCount int, // max concurrent handleTweet calls
 	maxRetries int,
 	retryDelay time.Duration,
 	svc dummyaccount.Service,
-	handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo),
+	handleTweet func(ctx context.Context, tag twitterprofile.TagType, twt *twitterTypes.TweetInfo),
 	syncLatestToCheckPoint func(ctx context.Context, user twitterprofile.TwitterProfile) time.Time,
 ) {
 	type userJob struct {
@@ -171,7 +172,7 @@ func TweetsPipeline(
 						Msg("Received nil tweet in handler")
 					continue
 				}
-				handleTweet(ctx, tj.tweet)
+				handleTweet(ctx, tag, tj.tweet)
 			}
 		}()
 	}

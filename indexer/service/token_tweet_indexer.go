@@ -20,6 +20,7 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 	"github.com/jeetdotso/tweet-indexer-service/scrape/rollback"
+	"github.com/jeetdotso/tweet-indexer-service/shared"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 )
 
@@ -32,7 +33,7 @@ const (
 
 type TokenTweetIndexer struct {
 	tweetRepo      repository.TweetEventRepository
-	twtPrf         twitterprofile.Repository
+	ftPrf          twitterprofile.Repository
 	checkpointRepo repository.UserCheckPointRepository
 	dummSvc        dummyaccount.Service
 	rawTweetRepo   repository.RawTweetRepository
@@ -42,7 +43,7 @@ type TokenTweetIndexer struct {
 func NewTokenTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap, sassIndx SaasIndexer) TokenTweetIndexer {
 	tweetRepo := repository.NewTweetIndexRepo(conn)
 	checkpointRepo := repository.NewUserCheckPointRepository(conn)
-	twtPrf := twitterprofile.NewRepository(conn)
+	ftPrf := twitterprofile.NewRepository(conn)
 	dummSvc := dummyaccount.NewSeleniumService(conn, &cfg)
 	grokSvc := NewGrokIndexer(cfg, conn, dummSvc, sassIndx)
 	rawTweetRepo := repository.NewRawTweetRepo(conn)
@@ -52,19 +53,19 @@ func NewTokenTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpc
 		checkpointRepo: checkpointRepo,
 		rawTweetRepo:   rawTweetRepo,
 		dummSvc:        dummSvc,
-		twtPrf:         twtPrf,
+		ftPrf:          ftPrf,
 		grokSvc:        grokSvc,
 	}
 }
 
 var trackedUsers = make(map[string]twitterprofile.TwitterProfile) // Keeps track of monitored users
-func (ti *TokenTweetIndexer) Start(ctx context.Context) {
+func (ti *TokenTweetIndexer) Start(ctx context.Context, tag twitterprofile.TagType) {
 	logg.Log.Info().Caller().Ctx(ctx).Msg("Starting tweet indexer service...")
 
 	for {
 		startTime := time.Now()
 
-		podName := os.Getenv("POD_NAME") // e.g. "grok-py-1"
+		podName := os.Getenv("POD_NAME") // e.g. "tweet-indexer-service-headless-1"
 		parts := strings.Split(podName, "-")
 		ordinal, err := strconv.Atoi(parts[len(parts)-1])
 		if err != nil {
@@ -76,7 +77,7 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 		if err != nil {
 			log.Printf("invalid REPLICAS: %v", err)
 		}
-		users, err := ti.twtPrf.FindByIsTracking(ctx, true)
+		users, err := ti.ftPrf.GetTopHitRaw(ctx, shared.MAX_ACCOUNTS_RUN, []string{tag.String()})
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
 			continue
@@ -90,13 +91,13 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 		}
 
 		mySlice := users[start:end]
-		usersToSync := make([]twitterprofile.TwitterProfile, 0, len(mySlice))
+		usersToSync := make([]twitterprofile.FetchedProfile, 0, len(mySlice))
 		for _, user := range mySlice {
 			cache.UpdateUserID(user.Handle, user.ID)
 			usersToSync = append(usersToSync, *user)
 		}
 		logg.Log.Info().Caller().Ctx(ctx).Msgf("Syncing %d users in pod %s (ordinal %d/%d)", len(usersToSync), podName, ordinal, reps)
-		err = ti.Sync(ctx, usersToSync)
+		err = ti.Sync(ctx, tag, usersToSync)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error syncing tweets.")
 			continue
@@ -104,7 +105,7 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 
 		logg.Log.Info().Caller().Ctx(ctx).Msgf("---------------------\nCycle completed in %s\n----------------", time.Since(startTime))
 		if time.Since(startTime) < 60*time.Second {
-			logg.Log.Info().Caller().Ctx(ctx).Msgf("Sleeping for %s", 12*time.Second)
+			logg.Log.Info().Caller().Ctx(ctx).Msgf("Sleeping for %s", 10*time.Second)
 			time.Sleep(10 * time.Second)
 		}
 
@@ -112,7 +113,7 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context) {
 }
 
 // ✅ **Sync tweets for a list of users**
-func (ti TokenTweetIndexer) Sync(ctx context.Context, usersToSync []twitterprofile.TwitterProfile) error {
+func (ti TokenTweetIndexer) Sync(ctx context.Context, tag twitterprofile.TagType, usersToSync []twitterprofile.FetchedProfile) error {
 	startTime := time.Now()
 
 	// 1) Extract just the IDs of the users we want to update checkpoints for
@@ -172,7 +173,7 @@ func (ti TokenTweetIndexer) Sync(ctx context.Context, usersToSync []twitterprofi
 	}
 
 	logg.Log.Info().Caller().Ctx(ctx).Msgf("-------------------------Sync completed in : %s", time.Since(startTime))
-	rollback.TweetsPipeline(ctx, userToTs, 60, 20, 2, 2*time.Second, ti.dummSvc, ti.HandleTweetEvent, ti.syncLatestToCheckPoint)
+	rollback.TweetsPipeline(ctx, tag, userToTs, 60, 20, 2, 2*time.Second, ti.dummSvc, ti.HandleTweetEvent, ti.syncLatestToCheckPoint)
 	// sync tweets for users
 	return nil
 }
@@ -262,7 +263,7 @@ func (ti TokenTweetIndexer) syncLatestToCheckPoint(ctx context.Context, user twi
 }
 
 // ✅ **Handler for new tweets (passed as a callback)**
-func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitterTypes.TweetInfo) {
+func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tagType twitterprofile.TagType, tweet *twitterTypes.TweetInfo) {
 	if tweet == nil {
 		logg.Log.Error().Caller().Ctx(ctx).Msg("HandleTweetEvent received a nil tweet")
 		return
@@ -285,7 +286,15 @@ func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tweet *twitter
 		// logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", tweetEvent.ID).Msg("Tweet event already exists.")
 		return
 	}
-	go ti.streamTweet(ctx, tweetEvent, tweet.FullInterface)
+	switch tagType {
+	case twitterprofile.TAG_TRADER:
+		tweetEvent.Category = model.CategoryTypeTRADER
+	case twitterprofile.TAG_MEME:
+		tweetEvent.Category = model.CategoryTypeMEME
+	default:
+		tweetEvent.Category = model.CategoryTypeTRADER
+	}
+	go ti.streamTweet(ctx, *tweetEvent, tweet.FullInterface)
 
 }
 
@@ -306,7 +315,7 @@ func (ti TokenTweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet 
 		// logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", tweetEvent.ID).Msg("Tweet event already exists.")
 		return
 	}
-	ti.streamRollbackTweet(ctx, tweetEvent)
+	ti.streamRollbackTweet(ctx, *tweetEvent)
 
 }
 
