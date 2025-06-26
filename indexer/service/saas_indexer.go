@@ -82,7 +82,12 @@ func (si *SaasIndexer) Start(ctx context.Context, grokEvent *model.GrokEvent) {
 }
 func (si *SaasIndexer) StartTweet(ctx context.Context, gr *model.GrokEvent, tweetEvent *model.TweetEvent) {
 	// Check if the user is already in the database
-
+	var tokensShilled []string
+	if gr.IsShill {
+		tokensShilled = gr.TokensShilled
+	} else {
+		tokensShilled = []string{"NNOT_SHILL"}
+	}
 	saasEvent := model.SaasEvent{
 		ID:            tweetEvent.ID,
 		TweetId:       tweetEvent.TweetID,
@@ -91,7 +96,7 @@ func (si *SaasIndexer) StartTweet(ctx context.Context, gr *model.GrokEvent, twee
 		UserId:        tweetEvent.UserID,
 		TweetType:     string(tweetEvent.TweetType),
 		TweetUrl:      tweetEvent.GetURL(),
-		TokensShilled: gr.TokensShilled,
+		TokensShilled: tokensShilled,
 	}
 
 	go si.streamTweet(ctx, saasEvent)
