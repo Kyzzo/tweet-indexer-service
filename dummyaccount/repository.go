@@ -112,14 +112,14 @@ func (repo *MongoRepository) AcquireNextByGroup(ctx context.Context, group int) 
 
 	// 2) Update sets in_use=true and bumps timestamps
 	update := bson.M{"$set": bson.M{
-		"in_use":         true,
-		"last_logged_in": time.Now(),
-		"updated_at":     time.Now(),
+		"in_use":      true,
+		"last_log_in": time.Now(),
+		"updated_at":  time.Now(),
 	}}
 
-	// 3) We want to pick the lowest-last_logged_in first:
+	// 3) We want to pick the lowest-last_log_in first:
 	opts := options.FindOneAndUpdate().
-		SetSort(bson.M{"last_logged_in": 1}).
+		SetSort(bson.M{"last_log_in": 1}).
 		SetReturnDocument(options.After) // return the doc *after* update
 
 	var acct SelAccount
