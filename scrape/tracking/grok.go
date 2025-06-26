@@ -23,7 +23,8 @@ type GrokMonitor struct {
 var (
 	// msgToSend = "Hello there"
 	profileMsg    = "@%s \n\nWould you classify this profile as a Trader, Memecoin Speculator, Influencer, Company, or None?Respond with only one. Output in raw text strictly adhere to the following schema {\"isCategorized\"}"
-	msgToSend2    = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question.\n\nText: %s\n %s. output in raw txt strictly follow the following schema {\"isPromoting\": bool,\"tokensPromoted\": list or null}"
+	memeMsg       = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question.\n\nText: %s\n %s. output in raw txt strictly follow the following schema {\"isPromoting\": bool,\"tokensPromoted\": list or null}"
+	traderMsg     = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question.\n\nText: %s\n %s. output in raw txt strictly follow the following schema {\"isPromoting\": bool,\"tokensPromoted\": list or null}"
 	launchCoinMsg = "https://x.com/%s/status/%s\nDoes this tweet reference the cryptocurrency token ‘Launchcoin’ at all? Respond in this format\n\nisPromoting: true| false"
 	msgToSend     = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question. Respond in this format:\n\nisPromoting: true| false \ntokensPromoted: tokens (separated by commas))"
 )
@@ -31,7 +32,7 @@ var (
 func NewGrokMonitor(ctx context.Context, svc dummyaccount.Service, url string) (*GrokMonitor, *dummyaccount.SelAccount, error) {
 	// Fetch the next available Selenium account
 	// selAccount, err := svc.LogInToNext(ctx)
-	selAccount, err := svc.LogInToNextGroup(ctx, dummyaccount.WORKING_GROUP)
+	selAccount, err := svc.LogInToNextGrok(ctx, dummyaccount.WORKING_GROUP)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving Selenium account.")
 		return nil, nil, err
@@ -57,14 +58,22 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	}
 
 	// Step 4: Send the actual Grok prompt
-	const maxPromptRetries = 5
+	const maxPromptRetries = 2
 	var (
 		err2 error
 		resp string
 	)
 
 	// TODO: change to intial
-	resp, _, err2 = gm.twitterAPI.SendMessage(getMsg2(tweet), convId, "grok-3", px, false)
+	var msgToSend string
+	switch tweet.Category {
+	case model.CategoryTypeMEME:
+		msgToSend = memeMessage(tweet)
+	default:
+		msgToSend = traderMessage(tweet)
+	}
+
+	resp, _, err2 = gm.twitterAPI.SendMessage(msgToSend, convId, "grok-3", px, false)
 	promV := gjson.Parse(resp).Get("isPromoting")
 	if resp == "" || !promV.Exists() {
 		//retry by geting convo history
@@ -275,9 +284,9 @@ func getMsg(tweet *model.TweetEvent) string {
 
 	// media := strings.Join(m, ",")
 
-	// return fmt.Sprintf(msgToSend2, tweet.Text, media)
+	// return fmt.Sprintf(memeMsg, tweet.Text, media)
 }
-func getMsg2(tweet *model.TweetEvent) string {
+func memeMessage(tweet *model.TweetEvent) string {
 	// return msgToSend
 	m := tweet.GetMediaUrls()
 
@@ -287,7 +296,19 @@ func getMsg2(tweet *model.TweetEvent) string {
 	} else {
 		media = ""
 	}
-	return fmt.Sprintf(msgToSend2, tweet.Text, media)
+	return fmt.Sprintf(memeMsg, tweet.Text, media)
+}
+func traderMessage(tweet *model.TweetEvent) string {
+	// return msgToSend
+	m := tweet.GetMediaUrls()
+
+	media := strings.Join(m, ",")
+	if len(m) >= 0 {
+		media = fmt.Sprintf("Media:%s\n", media)
+	} else {
+		media = ""
+	}
+	return fmt.Sprintf(traderMsg, tweet.Text, media)
 }
 func getUrl(tweet *model.TweetEvent) string {
 	return fmt.Sprintf("https://x.com/%s/status/%s", tweet.UserName, tweet.ID)
@@ -304,7 +325,7 @@ func GetGrokCheck(ctx context.Context, tweet *model.TweetEvent, svc dummyaccount
 		return
 	}
 	defer func() {
-		_ = svc.LogOut(ctx, selAccount.UserName)
+		_ = svc.LogGrokOut(ctx, selAccount.UserName)
 	}()
 
 	// Start monitoring tweets
@@ -319,7 +340,7 @@ func GetGrokProfile(ctx context.Context, prfID, prfUsername string, svc dummyacc
 		return
 	}
 	defer func() {
-		_ = svc.LogOut(ctx, selAccount.UserName)
+		_ = svc.LogGrokOut(ctx, selAccount.UserName)
 	}()
 
 	// Start monitoring tweets
