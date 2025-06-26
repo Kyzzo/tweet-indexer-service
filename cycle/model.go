@@ -21,6 +21,7 @@ type ScrapeCycle struct {
 	AvgScrapeTime      float64                `bson:"avg_scrape_time"`
 	Shills             int                    `bson:"shills"`
 	Status             int                    `bson:"status"`
+	Tags               []string               `bson:"tags"`
 	Metadata           map[string]interface{} `bson:"metadata"`
 }
 
