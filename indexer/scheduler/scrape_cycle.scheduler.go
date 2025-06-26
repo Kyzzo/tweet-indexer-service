@@ -15,6 +15,7 @@ import (
 	redis2 "github.com/jeetdotso/tweet-indexer-service/memory/redis"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	"github.com/jeetdotso/tweet-indexer-service/scheduler"
+	"github.com/jeetdotso/tweet-indexer-service/shared"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 	"github.com/redis/go-redis/v9"
 )
@@ -25,23 +26,30 @@ type ScrapeCycle struct {
 	twtPrf      twitterprofile.Repository
 	twtRepo     repository.TweetEventRepository
 	grokRepo    repository.GrokEventRepository
+	tags        []string
 }
 
 const (
 	ScrapeCycleKey = "scrape-cycle-lock-sync-daily-job"
 )
 
-func NewScrapeCycleScheduler(cfg *config.Config, conn *mongodb.MongoConnection) scheduler.Scheduler {
+func NewScrapeCycleScheduler(cfg *config.Config, conn *mongodb.MongoConnection, tags []twitterprofile.TagType) scheduler.Scheduler {
 	locker := redislock.New(redis.NewClient(redis2.GetRedisOptions(cfg.Memory)))
 	scrapeCycle := cycle.NewCycleService(conn, cfg)
 	twtPrf := twitterprofile.NewRepository(conn)
 	twtRepo := repository.NewTweetIndexRepo(conn)
 	grokRepo := repository.NewGrokIndexRepo(conn)
+	// Convert tags to string slice
+	var tagStrings []string
+	for _, tag := range tags {
+		tagStrings = append(tagStrings, string(tag))
+	}
 	return &ScrapeCycle{
 		locker:      locker,
 		scrapeCycle: scrapeCycle,
 		twtPrf:      twtPrf,
 		twtRepo:     twtRepo,
+		tags:        tagStrings,
 		grokRepo:    grokRepo,
 	}
 }
@@ -113,11 +121,17 @@ func (s *ScrapeCycle) Execute() {
 			return
 		}
 		sc.UniqueUsers = int(uniqueUsers)
-		totalUsers, err := s.twtPrf.FindByIsTracking(ctx, true)
-		if err != nil {
-			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error fetching users.")
+		var totalUsers int
+		for _, tag := range s.tags {
+			users, err := s.twtPrf.GetTopHitRaw(ctx, int64(shared.MAX_ACCOUNTS_RUN), []string{tag})
+			if err != nil {
+				logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Error fetching users for tag %s.", tag)
+				continue
+			}
+			totalUsers += len(users)
 		}
-		sc.TotalUsers = len(totalUsers)
+		sc.TotalUsers = totalUsers
+		sc.Tags = s.tags
 		if err = s.scrapeCycle.UpdateOrInsert(ctx, sc); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating scrape cycle.")
 			return
