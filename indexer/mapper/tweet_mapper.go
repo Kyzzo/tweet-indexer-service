@@ -8,8 +8,8 @@ import (
 )
 
 // ✅ Convert Twitter API response to TweetEvent
-func MapTweetToEvent(tweet *twitterTypes.TweetInfo) model.TweetEvent {
-	return model.TweetEvent{
+func MapTweetToEvent(tweet *twitterTypes.TweetInfo) *model.TweetEvent {
+	return &model.TweetEvent{
 		ID:                tweet.ID,
 		UserID:            tweet.UserID,
 		TweetType:         tweet.TweetType,
