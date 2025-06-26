@@ -16,32 +16,41 @@ import (
 )
 
 type SaasIndexer struct {
-	grokRepo  repository.GrokEventRepository
-	tweetRepo repository.TweetEventRepository
-	producer  stream.Producer
+	grokRepo       repository.GrokEventRepository
+	tweetRepo      repository.TweetEventRepository
+	memeProducer   stream.Producer
+	traderProducer stream.Producer
+	rawRepo        repository.RawTweetRepository
 }
 
 const (
-	SAAS_TOPIC_NAME = "shill"
+	MEME_TOPIC_NAME   = "shill"
+	TRADER_TOPIC_NAME = "trader"
 )
 
 var (
-	SAAS_TOPIC_CON = fmt.Sprintf("%s.%s", stream.StreamTweetPrefixTopic, SAAS_TOPIC_NAME)
+	REVIEW_TOPIC_CON_MEME   = fmt.Sprintf("%s.%s", stream.StreamTweetPrefixTopic, MEME_TOPIC_NAME)
+	REVIEW_TOPIC_CON_TRADER = fmt.Sprintf("%s.%s", stream.StreamTweetPrefixTopic, TRADER_TOPIC_NAME)
 )
 
 func NewSaasIndexer(cfg config.Config, conn *mongodb.MongoConnection) SaasIndexer {
 	grokRepo := repository.NewGrokIndexRepo(conn)
 	tweetRepo := repository.NewTweetIndexRepo(conn)
-	producer := kafka.NewProducer(cfg.Stream, SAAS_TOPIC_CON)
+	rawRepo := repository.NewRawTweetRepo(conn)
+
+	memeProducer := kafka.NewProducer(cfg.Stream, REVIEW_TOPIC_CON_MEME)
+	traderProducer := kafka.NewProducer(cfg.Stream, REVIEW_TOPIC_CON_TRADER)
 	return SaasIndexer{
-		grokRepo:  grokRepo,
-		tweetRepo: tweetRepo,
-		producer:  producer,
+		grokRepo:       grokRepo,
+		tweetRepo:      tweetRepo,
+		memeProducer:   memeProducer,
+		traderProducer: traderProducer,
+		rawRepo:        rawRepo,
 	}
 }
 
-func (si *SaasIndexer) TopicName() string {
-	return SAAS_TOPIC_CON
+func (si *SaasIndexer) TopicNames() []string {
+	return []string{REVIEW_TOPIC_CON_MEME, REVIEW_TOPIC_CON_TRADER}
 }
 
 func (si *SaasIndexer) Start(ctx context.Context, grokEvent *model.GrokEvent) {
@@ -55,6 +64,7 @@ func (si *SaasIndexer) Start(ctx context.Context, grokEvent *model.GrokEvent) {
 		logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", grokEvent.ID).Msg("Tweet event does not exists.")
 		return
 	}
+
 	saasEvent := model.SaasEvent{
 		ID:            grokEvent.ID,
 		TweetId:       tweet.TweetID,
@@ -63,6 +73,8 @@ func (si *SaasIndexer) Start(ctx context.Context, grokEvent *model.GrokEvent) {
 		UserId:        tweet.UserID,
 		TweetType:     string(tweet.TweetType),
 		TweetUrl:      tweet.GetURL(),
+		UserName:      tweet.UserName,
+		Category:      tweet.Category,
 		TokensShilled: grokEvent.TokensShilled,
 	}
 
@@ -104,9 +116,22 @@ func (si *SaasIndexer) streamTweet(ctx context.Context, saasEvt model.SaasEvent)
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
 		return
 	}
-	// Produce message to Kafka
-	if err = si.producer.Produce([]byte(LIVE_KEY), b); err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
+	switch saasEvt.Category {
+	case model.CategoryTypeMEME:
+		// Produce message to Kafka
+		if err = si.memeProducer.Produce([]byte(LIVE_KEY), b); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
+			return
+
+		}
+	case model.CategoryTypeTRADER:
+		// Produce message to Kafka
+		if err = si.traderProducer.Produce([]byte(LIVE_KEY), b); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
+			return
+
+		}
+	default:
 		return
 
 	}
