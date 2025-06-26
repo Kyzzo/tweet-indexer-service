@@ -177,7 +177,7 @@ func (h *SaasGRPCHandler) GetFollowingFullList(ctx context.Context, req *grpcsaa
 		}
 		return resp, nil
 	}
-	prfs, err := h.twtSvc.FindAllById(ctx, followingList)
+	prfs, err := h.twtSvc.FindAllByIDs(ctx, followingList)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving profiles by IDs.")
 		return nil, err
@@ -206,7 +206,7 @@ func (h *SaasGRPCHandler) GetProfilesByIDs(ctx context.Context, req *grpcsaasent
 		return nil, errors.New("invalid request: profile IDs are required")
 	}
 
-	prfs, err := h.twtSvc.FindAllById(ctx, req.KolIds)
+	prfs, err := h.twtSvc.FindAllByIDs(ctx, req.KolIds)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving profiles by IDs.")
 		return nil, err

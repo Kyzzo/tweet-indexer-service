@@ -128,7 +128,7 @@ func (f *FollowingIndexer) HandleFollowing(ctx context.Context, followedByID str
 		return
 	}
 	//add to twt prf
-	if err := f.twtPrf.UpsertTwitterProfile(ctx, user); err != nil {
+	if err := f.twtPrf.UpsertFetchedProfile(ctx, user); err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to upsert twitter profile.")
 		return
 	}
@@ -206,7 +206,7 @@ func (f *FollowingIndexer) GetByUsernamesAndCheckMulti(ctx context.Context, user
 		go func(ctx context.Context, un string) {
 			defer func() { <-sem }()
 			//check repo
-			exists, err := f.twtPrf.FindUserByTwitterHandle(ctx, un)
+			exists, err := f.twtPrf.FindFetchedUserByTwitterHandle(ctx, un)
 			if err != nil {
 				logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Failed to check if user %s exists in twitter profile repo.", un)
 				return
