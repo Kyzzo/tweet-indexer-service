@@ -87,7 +87,7 @@ func (si *SaasIndexer) StartTweet(ctx context.Context, gr *model.GrokEvent, twee
 	if gr.IsShill {
 		tokensShilled = gr.TokensShilled
 	} else {
-		tokensShilled = []string{"NNOT_SHILL"}
+		tokensShilled = []string{"NOT_SHILL"}
 	}
 	saasEvent := model.SaasEvent{
 		ID:            tweetEvent.ID,
