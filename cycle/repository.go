@@ -23,6 +23,7 @@ type Repository interface {
 	UpdateOrInsert(ctx context.Context, pl *ScrapeCycle) error
 	FindById(ctx context.Context, id primitive.ObjectID) (*ScrapeCycle, error)
 	FindLatest(ctx context.Context) (*ScrapeCycle, error)
+	FindByCycleTypeAndLimit(ctx context.Context, ct CycleType, limit int) ([]*ScrapeCycle, error)
 
 	//HEALTH CYCLE
 	FindHealthById(ctx context.Context, id primitive.ObjectID) (*HealthCycle, error)
@@ -62,6 +63,29 @@ func (repo *MongoRepository) UpdateOrInsert(ctx context.Context, pl *ScrapeCycle
 		return err
 	}
 	return nil
+}
+
+func (repo *MongoRepository) FindByCycleTypeAndLimit(ctx context.Context, ct CycleType, limit int) ([]*ScrapeCycle, error) {
+	filter := bson.M{"cycle_type": ct}
+	opts := options.Find().SetSort(bson.D{{"start_time", -1}}).SetLimit(int64(limit))
+	cursor, err := repo.conn.Datastore.Collection(repo.absrepo.Collection).Find(ctx, filter, opts)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding cycles by type and limit.")
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var cycles []*ScrapeCycle
+	for cursor.Next(ctx) {
+		var cycle ScrapeCycle
+		if err := cursor.Decode(&cycle); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding cycle.")
+			return nil, err
+		}
+		cycles = append(cycles, &cycle)
+	}
+
+	return cycles, nil
 }
 
 func (repo *MongoRepository) FindById(ctx context.Context, id primitive.ObjectID) (*ScrapeCycle, error) {

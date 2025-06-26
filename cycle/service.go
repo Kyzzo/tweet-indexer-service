@@ -17,6 +17,7 @@ type Service interface {
 	AddGrokError(ctx context.Context, errCount int) error
 	CreateNewCycle(ctx context.Context, ct CycleType) error
 	AddScrapedTweets(ctx context.Context) error
+	GetCycleByTypeAndLimit(ctx context.Context, ct CycleType, limit int) ([]*ScrapeCycle, error)
 	EndCycle(ctx context.Context) error
 	//Health Cycle
 	FindHealthById(ctx context.Context, id primitive.ObjectID) (*HealthCycle, error)
@@ -47,6 +48,14 @@ func NewCycleService(conn *mongodb.MongoConnection, cfg *config.Config) Service 
 	}
 }
 
+func (s *ServiceDefaultImpl) GetCycleByTypeAndLimit(ctx context.Context, ct CycleType, limit int) ([]*ScrapeCycle, error) {
+	cycles, err := s.repo.FindByCycleTypeAndLimit(ctx, ct, limit)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error getting cycles by type and limit.")
+		return nil, err
+	}
+	return cycles, nil
+}
 func (s *ServiceDefaultImpl) UpdateOrInsert(ctx context.Context, pl *ScrapeCycle) error {
 	err := s.repo.UpdateOrInsert(ctx, pl)
 	if err != nil {
