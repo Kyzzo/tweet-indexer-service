@@ -132,7 +132,7 @@ func (gi GrokIndexer) streamGrok(ctx context.Context, grokEvent model.GrokEvent)
 	// 	return
 	// }
 	if !grokEvent.IsShill {
-		grokEvent.TokensShilled = []string{"NOT_A_SHILL"}
+		grokEvent.TokensShilled = []string{"NOT_SHILL"}
 		return
 	}
 
