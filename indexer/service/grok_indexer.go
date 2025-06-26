@@ -65,9 +65,9 @@ func (gi *GrokIndexer) Start(ctx context.Context, tweet *model.TweetEvent, done 
 		return
 	}
 	if exist != nil {
-		if !exist.IsShill {
-			return
-		}
+		// if !exist.IsShill {
+		// 	return
+		// }
 		gi.saasSvc.StartTweet(ctx, exist, tweet)
 		return
 	}
@@ -127,8 +127,12 @@ func (gi GrokIndexer) streamGrok(ctx context.Context, grokEvent model.GrokEvent)
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to save tweet event.")
 		return
 	}
+	// TODO: Add Back IN after testing phase
+	// if !grokEvent.IsShill {
+	// 	return
+	// }
 	if !grokEvent.IsShill {
-		grokEvent.TokensMentioned = []string{"NOT A SHILL"}
+		grokEvent.TokensShilled = []string{"NOT_A_SHILL"}
 		return
 	}
 
