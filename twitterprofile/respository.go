@@ -298,6 +298,7 @@ func (repo *MongoRepository) GetTopHit(
 	} else {
 		filter = bson.D{} // match everything
 	}
+	filter = append(filter, bson.E{Key: "status", Value: bson.D{{Key: "$in", Value: bson.A{2, 3}}}})
 	// filter = append(filter, bson.E{Key: "status", Value: bson.D{{Key: "$in", Value: bson.A{2, 3}}}})
 	// 1) count total matching documents (for pagination)
 	total, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).CountDocuments(ctx, filter)
