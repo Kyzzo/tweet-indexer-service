@@ -54,6 +54,10 @@ func (s *ServiceDefaultImpl) GetCycleByTypeAndLimit(ctx context.Context, ct Cycl
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error getting cycles by type and limit.")
 		return nil, err
 	}
+	if len(cycles) == 0 {
+		logg.Log.Warn().Caller().Ctx(ctx).Msg("No cycles found for the given type and limit.")
+		return nil, nil
+	}
 	return cycles, nil
 }
 func (s *ServiceDefaultImpl) UpdateOrInsert(ctx context.Context, pl *ScrapeCycle) error {

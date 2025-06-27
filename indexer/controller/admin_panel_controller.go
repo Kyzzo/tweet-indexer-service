@@ -24,9 +24,11 @@ func NewAdminPanleController(cfg *config.Config, conn *mongodb.MongoConnection, 
 
 	ftcPrf := twitterprofile.NewRepository(conn)
 	fllIdx := service.NewFollowingIndexer(*cfg, conn, dummySvc) // Assuming dummy account service is not needed here
+	cycSvc := cycle.NewCycleService(conn, cfg)
 	return &AdminPanleController{
 		ftcPrf: ftcPrf,
 		fllIdx: fllIdx,
+		cycSvc: cycSvc,
 	}
 }
 
@@ -47,11 +49,12 @@ func (ctrl AdminPanleController) FindByCycleTypeAndLimit(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit is required"})
 		return
 	}
+
 	limitInt, err := strconv.Atoi(limit)
 	if err != nil || limitInt <= 0 {
 		limitInt = 10 // Default limit if parsing fails or is invalid
 	}
-	cycles, err := ctrl.cycSvc.GetCycleByTypeAndLimit(ctx.Request.Context(), cycle.CycleType(cycType), 10)
+	cycles, err := ctrl.cycSvc.GetCycleByTypeAndLimit(ctx.Request.Context(), cycle.CycleType(cycType), limitInt)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 
