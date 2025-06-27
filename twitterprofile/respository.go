@@ -22,12 +22,12 @@ type Repository interface {
 	FindFetchedByUserId(ctx context.Context, twitterId string) (*FetchedProfile, error)
 	FindFetchedUserByTwitterHandle(ctx context.Context, twitterHandle string) (*FetchedProfile, error)
 	FindFetchedUserByName(ctx context.Context, usrName string) (*FetchedProfile, error)
-	FindFetchedProfiles(ctx context.Context, q *FetchedProfileQuery) (*persistence.Pagination[[]*FetchedProfile], error)
+	FindFetchedProfiles(ctx context.Context, q *FetchedProfileQuery) (*persistence.Pagination[[]*FetchedProfileFull], error)
 	UpsertFetchedProfile(ctx context.Context, u twiterTypes.FollowingUser) error
 	ChangeStatusById(ctx context.Context, id string, status int) error
 	ChangeStatusMultiple(ctx context.Context, ids []string, status int) error
 	UpdateTagById(ctx context.Context, id string, tag string) error
-	GetTopHit(ctx context.Context, page, limit int64, tags []string) (*persistence.Pagination[[]*FetchedProfile], error)
+	GetTopHit(ctx context.Context, page, limit int64, tags []string) (*persistence.Pagination[[]*FetchedProfileFull], error)
 	GetTopHitRaw(ctx context.Context, limit int64, tags []string) ([]*FetchedProfile, error)
 	GetAllByStatus(ctx context.Context, status int) ([]*FetchedProfile, error)
 	GetAllByTag(ctx context.Context, tag string) ([]*FetchedProfile, error)
@@ -104,19 +104,16 @@ func (repo *MongoRepository) FindFetchedUserByName(ctx context.Context, usrName 
 func (repo *MongoRepository) FindFetchedProfiles(
 	ctx context.Context,
 	q *FetchedProfileQuery,
-) (*persistence.Pagination[[]*FetchedProfile], error) {
-	// 1) Build the filter document
-	filter := bson.M{}
+) (*persistence.Pagination[[]*FetchedProfileFull], error) {
 
+	// 1) Build the base filter
+	filter := bson.M{}
 	if q.Status != nil {
 		filter["status"] = *q.Status
 	}
 	if len(q.Tags) > 0 {
-		// since Profile.Tag is a single string,
-		// this matches any profile whose tag is in the list
 		filter["tag"] = bson.M{"$in": q.Tags}
 	}
-	// follower count range
 	if q.FollowersMin != nil || q.FollowersMax != nil {
 		rng := bson.M{}
 		if q.FollowersMin != nil {
@@ -128,53 +125,88 @@ func (repo *MongoRepository) FindFetchedProfiles(
 		filter["follower_count"] = rng
 	}
 
-	// 2) Build the find options (skip, limit, sort)
-	opts := options.Find().
-		SetSkip((q.Page - 1) * q.Size).
-		SetLimit(q.Size)
-
-	// determine sort direction
-	dir := -1
-	if q.Asc {
-		dir = 1
-	}
-	// default to captured_at if no field given
-	sortField := q.SortField
-	if sortField == "" {
-		sortField = "captured_at"
-	}
-	opts.SetSort(bson.D{{Key: sortField, Value: dir}})
-	// 3) Execute the query
-	cursor, err := repo.conn.Datastore.
-		Collection(repo.fetchRepo.Collection).
-		Find(ctx, filter, opts)
-	if err != nil {
-		return nil, fmt.Errorf("FindFetchedProfiles: %w", err)
-	}
-	defer cursor.Close(ctx)
-
-	var users []*FetchedProfile
-	for cursor.Next(ctx) {
-		var u FetchedProfile
-		if err := cursor.Decode(&u); err != nil {
-			return nil, fmt.Errorf("FindFetchedProfiles decode: %w", err)
-		}
-		users = append(users, &u)
-	}
-
-	// 4) Get total count for pagination metadata
+	// 2) Count total documents (unpaginated)
 	total, err := repo.conn.Datastore.
 		Collection(repo.fetchRepo.Collection).
 		CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("FindFetchedProfiles count: %w", err)
+		return nil, fmt.Errorf("FindFetchedProfilesFull count: %w", err)
 	}
 
-	// 5) Wrap it up in your pagination type
-	pag := persistence.NewPagination[[]*FetchedProfile](
-		q.Page, q.Size, users, total,
+	skip := (q.Page - 1) * q.Size
+	dir := -1
+	if q.Asc {
+		dir = 1
+	}
+	sortField := q.SortField
+	if sortField == "" {
+		sortField = "captured_at"
+	}
+
+	// 3) Build aggregation pipeline
+	pipeline := mongo.Pipeline{
+		// match stage
+		{{"$match", filter}},
+
+		// lookup followers
+		{{"$lookup", bson.D{
+			{"from", "following.indexes"},
+			{"localField", "_id"},
+			{"foreignField", "following_id"},
+			{"as", "followers_arr"},
+		}}},
+
+		// compute followed_by_count
+		{{"$addFields", bson.D{
+			{"followed_by_count", bson.D{{"$size", "$followers_arr"}}},
+		}}},
+	}
+
+	// 4) append sort
+	pipeline = append(pipeline, bson.D{{
+		"$sort", bson.D{{Key: sortField, Value: dir}},
+	}})
+
+	// 5) pagination
+	pipeline = append(pipeline,
+		bson.D{{"$skip", skip}},
+		bson.D{{"$limit", q.Size}},
 	)
-	return pag, nil
+
+	// 6) cleanup temporary array
+	pipeline = append(pipeline, bson.D{{"$project", bson.D{
+		{"followers_arr", 0},
+	}}})
+
+	// 7) execute aggregation
+	cursor, err := repo.conn.Datastore.
+		Collection(repo.fetchRepo.Collection).
+		Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("FindFetchedProfilesFull aggregate: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	// 8) decode into FetchedProfileFull
+	var results []*FetchedProfileFull
+	for cursor.Next(ctx) {
+		var fp FetchedProfileFull
+		if err := cursor.Decode(&fp); err != nil {
+			return nil, fmt.Errorf("decode full profile: %w", err)
+		}
+		results = append(results, &fp)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error: %w", err)
+	}
+
+	// 9) wrap in pagination
+	return &persistence.Pagination[[]*FetchedProfileFull]{
+		Result:     results,
+		Page:       q.Page,
+		Size:       q.Size,
+		TotalCount: total,
+	}, nil
 }
 
 func (repo *MongoRepository) UpsertFetchedProfile(ctx context.Context, u twiterTypes.FollowingUser) error {
@@ -286,88 +318,102 @@ func (repo *MongoRepository) ChangeStatusMultiple(ctx context.Context, ids []str
 	return nil
 }
 
+// following.indexes
+// following_id
 func (repo *MongoRepository) GetTopHit(
 	ctx context.Context,
 	page, limit int64,
 	tags []string,
-) (*persistence.Pagination[[]*FetchedProfile], error) {
-	// 0) build a BSON filter for tags
-	var filter bson.D
+) (*persistence.Pagination[[]*FetchedProfileFull], error) {
+
+	// 0) build tag + status filter
+	filter := bson.D{}
 	if len(tags) > 0 {
-		filter = bson.D{{"tag", bson.D{{"$in", tags}}}}
-	} else {
-		filter = bson.D{} // match everything
+		filter = append(filter, bson.E{"tag", bson.D{{"$in", tags}}})
 	}
-	filter = append(filter, bson.E{Key: "status", Value: bson.D{{Key: "$in", Value: bson.A{2, 3}}}})
-	// filter = append(filter, bson.E{Key: "status", Value: bson.D{{Key: "$in", Value: bson.A{2, 3}}}})
-	// 1) count total matching documents (for pagination)
-	total, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).CountDocuments(ctx, filter)
+	// only statuses 2 & 3
+	filter = append(filter, bson.E{"status", bson.D{{"$in", bson.A{2, 3}}}})
+
+	// 1) count total for pagination
+	total, err := repo.conn.Datastore.
+		Collection(repo.fetchRepo.Collection).
+		CountDocuments(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("count profiles: %w", err)
 	}
 
-	// 2) compute skip
 	skip := (page - 1) * limit
 
-	// 3) build our aggregation pipeline
+	// 2) build aggregation pipeline
 	pipeline := mongo.Pipeline{}
 
-	// – optional tag‐filter
-	if len(filter) > 0 {
-		pipeline = append(pipeline, bson.D{{"$match", filter}})
-	}
+	// – match tags & status
+	pipeline = append(pipeline, bson.D{{"$match", filter}})
 
-	// – synthesize isNotTwo = 0 if status==2 else 1
-	pipeline = append(pipeline, bson.D{{
-		"$addFields", bson.D{{
-			"isNotTwo", bson.D{{
-				"$cond", bson.A{
-					bson.D{{"$eq", bson.A{"$status", 2}}},
-					0,
-					1,
-				},
-			}},
+	// – helper to sort status=2 first
+	pipeline = append(pipeline, bson.D{{"$addFields", bson.D{{
+		"isNotTwo", bson.D{{
+			"$cond", bson.A{
+				bson.D{{"$eq", bson.A{"$status", 2}}},
+				0,
+				1,
+			},
 		}},
-	}})
+	}}}})
 
-	// – sort first by isNotTwo asc, then follower_count desc
-	pipeline = append(pipeline, bson.D{{
-		"$sort", bson.D{
-			{"isNotTwo", 1},
-			{"follower_count", -1},
-		},
-	}})
+	// – sort by isNotTwo, then follower_count
+	pipeline = append(pipeline, bson.D{{"$sort", bson.D{
+		{"isNotTwo", 1},
+		{"follower_count", -1},
+	}}})
 
-	// – pagination: skip then limit
+	// – pagination
 	pipeline = append(pipeline, bson.D{{"$skip", skip}})
 	pipeline = append(pipeline, bson.D{{"$limit", limit}})
 
-	// – remove our helper field
-	pipeline = append(pipeline, bson.D{{"$project", bson.D{
-		{"isNotTwo", 0},
+	// ─── NEW: lookup followers count ─────────────────────────────────────
+	pipeline = append(pipeline, bson.D{{"$lookup", bson.D{
+		{"from", "following.indexes"},
+		{"localField", "_id"},
+		{"foreignField", "following_id"},
+		{"as", "followers_arr"},
 	}}})
 
-	// 4) execute it
-	cursor, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).Aggregate(ctx, pipeline)
+	pipeline = append(pipeline, bson.D{{"$addFields", bson.D{
+		{"followed_by_count", bson.D{{"$size", "$followers_arr"}}},
+	}}})
+
+	// – cleanup helper & lookup array
+	pipeline = append(pipeline, bson.D{{"$project", bson.D{
+		{"isNotTwo", 0},
+		{"followers_arr", 0},
+	}}})
+
+	// 3) execute
+	cursor, err := repo.conn.Datastore.
+		Collection(repo.fetchRepo.Collection).
+		Aggregate(ctx, pipeline)
 	if err != nil {
-		return nil, fmt.Errorf("aggregate top hits: %w", err)
+		return nil, fmt.Errorf("aggregate top hits full: %w", err)
 	}
 	defer cursor.Close(ctx)
 
-	var pageItems []*FetchedProfile
+	// 4) decode into FetchedProfileFull
+	var items []*FetchedProfileFull
 	for cursor.Next(ctx) {
-		var p FetchedProfile
+		var p FetchedProfileFull
 		if err := cursor.Decode(&p); err != nil {
-			return nil, fmt.Errorf("decode profile: %w", err)
+			return nil, fmt.Errorf("decode full profile: %w", err)
 		}
-		pageItems = append(pageItems, &p)
+		items = append(items, &p)
 	}
 	if err := cursor.Err(); err != nil {
 		return nil, fmt.Errorf("cursor error: %w", err)
 	}
 
-	return &persistence.Pagination[[]*FetchedProfile]{
-		Result:     pageItems,
+	// 5) return new pagination
+	return &persistence.Pagination[[]*FetchedProfileFull]{
+		Result:     items,
 		Page:       page,
 		Size:       limit,
 		TotalCount: total,
