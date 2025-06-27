@@ -147,7 +147,7 @@ func (repo *MongoRepository) FindLatestHealth(ctx context.Context) (*HealthCycle
 
 func (repo *MongoRepository) FindAllHealth(ctx context.Context) ([]*HealthCycle, error) {
 	filter := bson.D{}
-	opts := options.Find().SetSort(bson.D{{"start_time", -1}})
+	opts := options.Find().SetSort(bson.D{{"start_time", 1}})
 	cursor, err := repo.conn.Datastore.Collection(repo.absHealthRepo.Collection).Find(ctx, filter, opts)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all health cycles.")
@@ -228,7 +228,7 @@ func (repo *MongoRepository) UpdateOrInsertFollowing(ctx context.Context, pl *Fo
 
 func (repo *MongoRepository) FindAllFollowing(ctx context.Context) ([]*FollowingCycle, error) {
 	filter := bson.D{}
-	opts := options.Find().SetSort(bson.D{{"start_time", -1}})
+	opts := options.Find().SetSort(bson.D{{"start_time", 1}})
 	cursor, err := repo.conn.Datastore.Collection(repo.absFollowingRepo.Collection).Find(ctx, filter, opts)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all following cycles.")
