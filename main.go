@@ -37,15 +37,15 @@ func main() {
 	dummSvc := dummyaccount.NewSeleniumService(&conn, cfg)
 	var tagsToRun []twitterprofile.TagType = []twitterprofile.TagType{twitterprofile.TAG_TRADER}
 	dummSvc.ResetAll(ctx)
-	// // // //Register Scrapes
+	//Register Scrapes
 	_, saasIdx := registerScrapes(ctx, *cfg, &conn, grpcconn, tagsToRun)
 
-	// //Register GRPC server
+	//Register GRPC server
 	go registerGrpcServer(cfg, &conn, grpcconn, dummSvc)
-	// //Register Schedulers
+	//Register Schedulers
 	go registerSchedulers(cfg, &conn, dummSvc, saasIdx, tagsToRun)
 
-	// //Register http endpoints
+	//Register http endpoints
 	registerHttp(cfg, &conn, dummSvc)
 }
 
@@ -93,8 +93,8 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dum
 func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap, tagsToRun []twitterprofile.TagType) ([]string, service.SaasIndexer) {
 	// deps
 	var (
-		saasIndexer = service.NewSaasIndexer(cfg, conn)
-		// tokenTweetIndexer = service.NewTokenTweetIndexer(cfg, conn, grpcconn, saasIndexer)
+		saasIndexer       = service.NewSaasIndexer(cfg, conn)
+		tokenTweetIndexer = service.NewTokenTweetIndexer(cfg, conn, grpcconn, saasIndexer)
 	)
 
 	var topicNames []string
@@ -102,9 +102,9 @@ func registerScrapes(ctx context.Context, cfg config.Config, conn *mongodb.Mongo
 	topicNames = append(topicNames, saasIndexer.TopicNames()...)
 
 	// start tweet indexer
-	// for _, tag := range tagsToRun {
-	// 	go tokenTweetIndexer.Start(ctx, tag)
-	// }
+	for _, tag := range tagsToRun {
+		go tokenTweetIndexer.Start(ctx, tag)
+	}
 
 	return topicNames, saasIndexer
 }
