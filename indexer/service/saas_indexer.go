@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"runtime/debug"
 
 	"github.com/jeetdotso/tweet-indexer-service/config"
@@ -98,6 +99,12 @@ func (si *SaasIndexer) StartTweet(ctx context.Context, gr *model.GrokEvent, twee
 		TweetType:     string(tweetEvent.TweetType),
 		TweetUrl:      tweetEvent.GetURL(),
 		TokensShilled: tokensShilled,
+	}
+	if !gr.IsShill {
+
+		log.Printf("→ publishing event: isShill=%v tokensShilled=%v",
+			gr.IsShill, saasEvent.TokensShilled,
+		)
 	}
 
 	go si.streamTweet(ctx, saasEvent)
