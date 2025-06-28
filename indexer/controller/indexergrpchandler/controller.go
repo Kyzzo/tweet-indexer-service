@@ -155,9 +155,9 @@ func (h *SaasGRPCHandler) AddFollowingsByUsername(ctx context.Context, req *grpc
 	go h.followSvc.ScrapeFollowingListById(ctl, id.ID)
 
 	resp := &grpcsaasentry.AddFollowingsUsernameResponse{
-		Success: true,
-		Id:      id.ID,
 		Message: "Followings are being added for the profile",
+		Id:      id.ID,
+		Success: true,
 	}
 	return resp, nil
 }
