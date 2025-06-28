@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/jeetdotso/tweet-indexer-service/proto";
+
+message FollowingEvent {
+    string user_id = 1;
+    repeated string followed_user_id = 2;
+}

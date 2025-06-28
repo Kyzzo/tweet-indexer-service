@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -13,8 +15,11 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
 	"github.com/jeetdotso/tweet-indexer-service/scrape/tracking"
+	"github.com/jeetdotso/tweet-indexer-service/stream"
+	"github.com/jeetdotso/tweet-indexer-service/stream/kafka"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 	"github.com/jeetdotso/tweet-indexer-service/util"
+	"google.golang.org/protobuf/proto"
 )
 
 // receive who's following by followed id
@@ -22,14 +27,20 @@ import (
 // following list by id true | false if tracked
 // get followed by list via id w/ excluding ids
 type FollowingIndexer struct {
-	twtPrf   twitterprofile.Repository
-	prfSvc   Profile
-	dummSvc  dummyaccount.Service
-	follRepo repository.FollowingRepository
-	URL      string // URL for the grok service, can be set in config
+	twtPrf         twitterprofile.Repository
+	prfSvc         Profile
+	dummSvc        dummyaccount.Service
+	follRepo       repository.FollowingRepository
+	URL            string // URL for the grok service, can be set in config
+	followProducer stream.Producer
 }
 
+var (
+	SAAS_TOPIC_CON_FOLLOW = fmt.Sprintf("%s.%s", stream.StreamFollowingsPrefixTopic, FOLLOW_TOPIC_NAME)
+)
+
 const (
+	FOLLOW_KEY                = "followings"
 	SINGLE_PAGE_WORKER_COUNT  = 10
 	SINGLE_PAGE_HANDLER_COUNT = 20
 	SINGLE_PAGE_MAX_RETRIES   = 3
@@ -46,20 +57,27 @@ const (
 	SINGLE_USER_RETRY_DELAY   = 2 * time.Second
 
 	THRESHOLD_FOLLOWING_COUNT = 15000 // Threshold for the following count for saving
+	FOLLOW_TOPIC_NAME         = "followers"
 )
 
 func NewFollowingIndexer(cfg config.Config, conn *mongodb.MongoConnection, dummySvc dummyaccount.Service) FollowingIndexer {
 	follRepo := repository.NewFollowingRepository(conn)
 	twtPrf := twitterprofile.NewRepository(conn)
 	prfSvc := NewProfile(cfg, conn, dummySvc)
+	follPro := kafka.NewProducer(cfg.Stream, SAAS_TOPIC_CON_FOLLOW)
 
 	return FollowingIndexer{
-		follRepo: follRepo,
-		dummSvc:  dummySvc,
-		twtPrf:   twtPrf,
-		prfSvc:   prfSvc,
-		URL:      cfg.Services.GrokAPIServices.Host,
+		follRepo:       follRepo,
+		dummSvc:        dummySvc,
+		twtPrf:         twtPrf,
+		prfSvc:         prfSvc,
+		URL:            cfg.Services.GrokAPIServices.Host,
+		followProducer: follPro,
 	}
+}
+
+func (f *FollowingIndexer) TopicNames() []string {
+	return []string{SAAS_TOPIC_CON_FOLLOW}
 }
 
 func (f *FollowingIndexer) ScrapeFollowingList(ctx context.Context) error {
@@ -80,6 +98,7 @@ func (f *FollowingIndexer) ScrapeFollowingList(ctx context.Context) error {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to delete old followings.")
 		return err
 	}
+	// TODO: Add kafka for new followings for each user
 	return nil
 }
 
@@ -100,6 +119,7 @@ func (f *FollowingIndexer) ScrapeFollowingListById(ctx context.Context, userId s
 	}
 	userIds := map[string]struct{}{userId: {}}
 	tracking.MonitorFollowingsPipeline(ctx, userIds, SINGLE_USER_WORKER_COUNT, SINGLE_PAGE_HANDLER_COUNT, SINGLE_USER_MAX_RETRIES, SINGLE_USER_RETRY_DELAY, f.HandleFollowing, f.dummSvc)
+	// TODO: Add kafka for new followings
 }
 
 func (f *FollowingIndexer) ScrapeFollowingListBySinglePage(ctx context.Context) error {
@@ -114,6 +134,7 @@ func (f *FollowingIndexer) ScrapeFollowingListBySinglePage(ctx context.Context) 
 	}
 	tracking.MonitorSingleFollowingPagePipeline(ctx, userIds, min(SINGLE_PAGE_WORKER_COUNT, len(userIds)), min(SINGLE_PAGE_HANDLER_COUNT, len(userIds)), SINGLE_PAGE_MAX_RETRIES, SINGLE_USER_RETRY_DELAY, f.HandleFollowing, f.dummSvc)
 	return nil
+	// TODO: Add kafka for new followings
 }
 
 func (f *FollowingIndexer) HandleFollowing(ctx context.Context, followedByID string, user twitterTypes.FollowingUser) {
@@ -278,4 +299,73 @@ func (f *FollowingIndexer) GetEmptyTagsAndRunGrok(ctx context.Context) error {
 		sem <- struct{}{}
 	}
 	return nil
+}
+
+func (f *FollowingIndexer) streamAllFollowings(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			logg.Log.Error().
+				Caller().
+				Ctx(ctx).
+				Msgf("Recovered from panic in streamAllFollowings: %v\n%s", r, debug.Stack())
+		}
+	}()
+
+	userIds, err := f.follRepo.FindAllUniqueUserIDs(ctx)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to find all unique user IDs.")
+		return
+	}
+	if len(userIds) == 0 {
+		logg.Log.Info().Caller().Ctx(ctx).Msg("No unique user IDs found, skipping.")
+		return
+	}
+
+	for userID := range userIds {
+		if err := f.streamFollowingsByUserID(ctx, userID); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Failed to stream followings for user ID: %s", userID)
+			continue
+		}
+	}
+	return
+}
+
+func (f *FollowingIndexer) streamFollowingsByUserID(ctx context.Context, userID string) error {
+	defer func() {
+		if r := recover(); r != nil {
+			logg.Log.Error().
+				Caller().
+				Ctx(ctx).
+				Msgf("Recovered from panic in streamFollowingsByUserID for user %s: %v\n%s",
+					userID, r, debug.Stack(),
+				)
+		}
+	}()
+
+	if userID == "" {
+		logg.Log.Warn().Caller().Ctx(ctx).Msg("UserID is empty, skipping.")
+		return nil
+	}
+	followings, err := f.follRepo.FindAllByUserID(ctx, userID)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Failed to find followings for user ID: %s", userID)
+		return err
+	}
+	if len(followings) == 0 {
+		logg.Log.Info().Caller().Ctx(ctx).Msgf("No followings found for user ID: %s", userID)
+		return nil
+	}
+
+	b, err := proto.Marshal(model.ToProto(userID, followings))
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
+		return err
+	}
+	if err = f.followProducer.Produce([]byte(FOLLOW_KEY), b); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce followings stream message.")
+		return err
+
+	}
+	return nil
+
 }

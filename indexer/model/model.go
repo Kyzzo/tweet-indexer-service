@@ -226,3 +226,16 @@ func NewFollowing(userID, followingID string) *Following {
 func (f *Following) GetID() any {
 	return f.ID
 }
+
+func ToProto(userId string, followings []string) *proto.FollowingEvent {
+	if followings == nil {
+		return nil
+	}
+
+	protoFollowings := &proto.FollowingEvent{
+		UserId:         userId,
+		FollowedUserId: followings,
+	}
+
+	return protoFollowings
+}
