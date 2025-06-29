@@ -24,7 +24,7 @@ var (
 	// msgToSend = "Hello there"
 	profileMsg    = "@%s \n\nWould you classify this profile as a Trader, Memecoin Speculator, Influencer, Company, or None?Respond with only one. Output in raw text strictly adhere to the following schema {\"isCategorized\"}"
 	memeMsg       = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question.\n\nText: %s\n %s. output in raw txt strictly follow the following schema {\"isPromoting\": bool,\"tokensPromoted\": list or null}"
-	traderMsg     = "For a cryptocurrency trader, useful analysis typically involves commentary on any of these 6 factors: price movements, volume trends, technical indicators, onchain indicators, fundamental catalysts, or the mere presence of a price chart image. Your job is to analyze this tweet and determine whether any of the 6 criteria are being met. If so, the tweet will be defined as useful analysis.  If the tweet is being defined as useful analysis, we what to know what token ticker(s) are being referenced.\n\nText: %s\n %s Produce a response in raw text strictly adhering to the following schema {\"isUsefulAnalysis\": bool,\"tokensMentioned\": list or null}"
+	traderMsg     = "%s\n\nFor a cryptocurrency trader, useful analysis typically involves commentary on any of these 6 factors: price movements, volume trends, technical indicators, onchain indicators, fundamental catalysts, or the mere presence of a price chart image. Your job is to analyze this tweet and determine whether any of the 6 criteria are being met. If so, the tweet will be defined as useful analysis.  If the tweet is being defined as useful analysis, we what to know what token ticker is being referenced. If there are multiple tokens being referenced, list them all. Produce a response in raw text strictly adhering to the following schema {\"isUsefulAnalysis\": bool,\"tokensMentioned\": list or null}"
 	launchCoinMsg = "https://x.com/%s/status/%s\nDoes this tweet reference the cryptocurrency token ‘Launchcoin’ at all? Respond in this format\n\nisPromoting: true| false"
 	msgToSend     = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question. Respond in this format:\n\nisPromoting: true| false \ntokensPromoted: tokens (separated by commas))"
 )
@@ -292,15 +292,9 @@ func memeMessage(tweet *model.TweetEvent) string {
 }
 func traderMessage(tweet *model.TweetEvent) string {
 	// return msgToSend
-	m := tweet.GetMediaUrls()
+	url := fmt.Sprintf("https://x.com/%s/status/%s", tweet.UserName, tweet.TweetID)
 
-	media := strings.Join(m, ",")
-	if len(m) >= 0 {
-		media = fmt.Sprintf("Media:%s\n", media)
-	} else {
-		media = ""
-	}
-	return fmt.Sprintf(traderMsg, tweet.Text, media)
+	return fmt.Sprintf(traderMsg, url)
 }
 func getUrl(tweet *model.TweetEvent) string {
 	return fmt.Sprintf("https://x.com/%s/status/%s", tweet.UserName, tweet.ID)
