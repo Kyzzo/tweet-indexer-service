@@ -84,6 +84,7 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dum
 	r.GET("/public/indexer/admin-panel/health/cycle", adminPnlCtrl.GetAllHealthCycles)
 	r.GET("/public/indexer/admin-panel/following/cycle/latest/:type", adminPnlCtrl.GetFollowingCycle)
 	r.GET("/public/indexer/admin-panel/following/cycle", adminPnlCtrl.GetAllFollowingCycles)
+	r.GET("/public/indexer/admin-panel/grok-chart", adminPnlCtrl.GetGrokDataCycles)
 	err := r.Run(":" + cfg.Server.Port)
 	if err != nil {
 		log.Panic().Err(err).Msg("Error starting server")

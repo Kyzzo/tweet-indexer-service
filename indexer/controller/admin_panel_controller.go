@@ -3,11 +3,13 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jeetdotso/tweet-indexer-service/config"
 	"github.com/jeetdotso/tweet-indexer-service/cycle"
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
+	"github.com/jeetdotso/tweet-indexer-service/indexer/repository"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/service"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
@@ -15,20 +17,23 @@ import (
 )
 
 type AdminPanleController struct {
-	ftcPrf twitterprofile.Repository
-	fllIdx service.FollowingIndexer
-	cycSvc cycle.Service
+	ftcPrf   twitterprofile.Repository
+	fllIdx   service.FollowingIndexer
+	grokRepo repository.GrokEventRepository
+	cycSvc   cycle.Service
 }
 
 func NewAdminPanleController(cfg *config.Config, conn *mongodb.MongoConnection, dummySvc dummyaccount.Service) *AdminPanleController {
 
 	ftcPrf := twitterprofile.NewRepository(conn)
 	fllIdx := service.NewFollowingIndexer(*cfg, conn, dummySvc) // Assuming dummy account service is not needed here
+	grokRepo := repository.NewGrokIndexRepo(conn)
 	cycSvc := cycle.NewCycleService(conn, cfg)
 	return &AdminPanleController{
-		ftcPrf: ftcPrf,
-		fllIdx: fllIdx,
-		cycSvc: cycSvc,
+		ftcPrf:   ftcPrf,
+		fllIdx:   fllIdx,
+		grokRepo: grokRepo,
+		cycSvc:   cycSvc,
 	}
 }
 
@@ -141,4 +146,37 @@ func (ctrl AdminPanleController) GetAllHealthCycles(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "All Health Cycles retrieved successfully", "cycles": healthCycles})
+}
+
+// ///////////////Grok Data Cycles/////////////////
+type GetGrokChartRequest struct {
+	Start      time.Time `form:"start"     time_format:"2006-01-02T15:04:05Z07:00"  binding:"required"`
+	End        time.Time `form:"end"       time_format:"2006-01-02T15:04:05Z07:00"  binding:"required"`
+	Interval   string    `form:"interval"  binding:"required,oneof=5min 1H 2H 3H 1D 2D 1W"`
+	Categories []int     `form:"category"`
+}
+
+func (ctrl AdminPanleController) GetGrokDataCycles(c *gin.Context) {
+	var req GetGrokChartRequest
+
+	// bind & validate query params
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	chart, err := ctrl.grokRepo.GetGrokChart(
+		c.Request.Context(),
+		req.Start,
+		req.End,
+		req.Interval,
+		req.Categories,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// return the full chart response
+	c.JSON(http.StatusOK, chart)
 }

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jeetdotso/tweet-indexer-service/indexer/model"
@@ -22,6 +23,7 @@ type GrokEventRepository interface {
 	FindAll(ctx context.Context) ([]model.GrokEvent, error)
 	FindMostRecentByUserId(ctx context.Context, userId string) (*model.GrokEvent, error)
 	GrokTrueSince(ctx context.Context, since time.Time) (int64, error)
+	GetGrokChart(ctx context.Context, start, end time.Time, interval string, categories []int) (*model.GrokChartResponse, error)
 }
 type mongoGrokEventRepository struct {
 	conn    *mongodb.MongoConnection
@@ -168,3 +170,130 @@ func (repo *mongoGrokEventRepository) GrokTrueSince(ctx context.Context, since t
 	}
 	return count, nil
 }
+
+// GetGrokChart returns counts of GrokEvent documents per interval between start and end.
+func (repo *mongoGrokEventRepository) GetGrokChart(ctx context.Context, start, end time.Time, interval string, categories []int) (*model.GrokChartResponse, error) {
+	// 1) parse interval into unit & binSize
+	var unit string
+	var binSize int32
+	var step time.Duration
+	switch interval {
+	case "5min":
+		unit, binSize, step = "minute", 5, 5*time.Minute
+	case "1H":
+		unit, binSize, step = "hour", 1, time.Hour
+	case "2H":
+		unit, binSize, step = "hour", 2, 2*time.Hour
+	case "3H":
+		unit, binSize, step = "hour", 3, 3*time.Hour
+	case "1D":
+		unit, binSize, step = "day", 1, 24*time.Hour
+	case "2D":
+		unit, binSize, step = "day", 2, 2*24*time.Hour
+	case "1W":
+		unit, binSize, step = "week", 1, 7*24*time.Hour
+	default:
+		return nil, fmt.Errorf("unsupported interval %q", interval)
+	}
+
+	// 2) total count in [start,end)
+	matchFilter := bson.M{
+		"created_at": bson.M{"$gte": start, "$lt": end},
+		"is_shill":   true,
+	}
+	if len(categories) > 0 {
+		matchFilter["category"] = bson.M{"$in": categories}
+	}
+
+	total, err := repo.conn.Datastore.
+		Collection(grokIndexCollection).
+		CountDocuments(ctx, matchFilter)
+	if err != nil {
+		return nil, fmt.Errorf("count total events: %w", err)
+	}
+
+	// 3) build aggregation pipeline
+	pipeline := mongo.Pipeline{
+		// match time window and filter by categories if provided
+		{{"$match", matchFilter}},
+		// group into buckets
+		{{"$group", bson.D{
+			{"_id", bson.D{{
+				"$dateTrunc", bson.D{
+					{"date", "$created_at"},
+					{"unit", unit},
+					{"binSize", binSize},
+					{"timezone", "UTC"},
+				},
+			}}},
+			{"count", bson.D{{"$sum", 1}}},
+		}}},
+		// project into our shape
+		{{"$project", bson.D{
+			{"_id", 0},
+			{"timestamp", "$_id"},
+			{"unix", bson.D{{"$toLong", "$_id"}}},
+			{"count", 1},
+		}}},
+		// order ascending
+		{{"$sort", bson.D{{"timestamp", 1}}}},
+	}
+
+	cursor, err := repo.conn.Datastore.
+		Collection(grokIndexCollection).
+		Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate chart data: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	// 4) decode buckets
+	var data []model.GrokChartData
+	for cursor.Next(ctx) {
+		var d model.GrokChartData
+		if err := cursor.Decode(&d); err != nil {
+			return nil, fmt.Errorf("decode bucket: %w", err)
+		}
+		data = append(data, d)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("cursor error: %w", err)
+	}
+
+	// build a map from timestamp to count
+	countMap := make(map[time.Time]int, len(data))
+	for _, d := range data {
+		// ensure timestamps are UTC-truncated to the bucket
+		ts := d.Timestamp.UTC().Truncate(step)
+		countMap[ts] = d.Count
+	}
+
+	// generate full time series
+	full := make([]model.GrokChartData, 0, int(end.Sub(start)/step)+1)
+	// start from the bucket boundary at or before `start`
+	t := start.UTC().Truncate(step)
+	// advance until we reach `end`
+	for !t.After(end.UTC()) {
+		full = append(full, model.GrokChartData{
+			Timestamp: t,
+			Unix:      t.UnixMilli(),
+			Count:     countMap[t], // zero if missing
+		})
+		t = t.Add(step)
+	}
+
+	// 5) assemble response
+	return &model.GrokChartResponse{
+		ChartData:  full,
+		TotalCount: total,
+		Start:      start,
+		End:        end,
+		Interval:   interval,
+	}, nil
+}
+
+
+
+
+
+

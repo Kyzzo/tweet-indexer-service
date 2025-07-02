@@ -239,3 +239,17 @@ func ToProto(userId string, followings []string) *proto.FollowingEvent {
 
 	return protoFollowings
 }
+
+type GrokChartResponse struct {
+	ChartData  []GrokChartData `json:"chart_data"`
+	TotalCount int64           `json:"total_count"`
+	Start      time.Time       `json:"start_time"`
+	End        time.Time       `json:"end_time"`
+	Interval   string          `json:"interval"` // e.g.,"5min" "1h", "1d", "1w"
+}
+
+type GrokChartData struct {
+	Timestamp time.Time `json:"timestamp"`
+	Unix      int64     `json:"unix"`
+	Count     int       `json:"count"`
+}
