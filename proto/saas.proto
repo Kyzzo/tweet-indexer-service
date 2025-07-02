@@ -71,6 +71,13 @@ message ErrorResponse {
   string error = 1; // Error message.
 }
 
+message GetRawTweetEventResponse {
+  string raw_tweet_event = 1; // Raw tweet event data.
+}
+
+message GetRawTweetEventRequest {
+  string tweet_id = 1; // The ID of the tweet to retrieve.
+}
 
 message EmptyRequest {}
 // Service definition for saas entry operations.
@@ -91,6 +98,8 @@ service SaasEntryService {
   rpc GetFollowingFullList(FollowedListRequest) returns (FollowingFullListResponse);
   // Retrieves a full profiles from IDs
   rpc GetProfilesByIDs(BlockListRequest) returns (FollowingFullListResponse);
+  //Retrieves raw tweet event data by tweet ID.
+  rpc GetRawTweetEvent(GetRawTweetEventRequest) returns (GetRawTweetEventResponse);
 
 
 }

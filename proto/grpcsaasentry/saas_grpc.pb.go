@@ -27,6 +27,7 @@ const (
 	SaasEntryService_AddFollowingsByUsername_FullMethodName      = "/grpcsaasentry.SaasEntryService/AddFollowingsByUsername"
 	SaasEntryService_GetFollowingFullList_FullMethodName         = "/grpcsaasentry.SaasEntryService/GetFollowingFullList"
 	SaasEntryService_GetProfilesByIDs_FullMethodName             = "/grpcsaasentry.SaasEntryService/GetProfilesByIDs"
+	SaasEntryService_GetRawTweetEvent_FullMethodName             = "/grpcsaasentry.SaasEntryService/GetRawTweetEvent"
 )
 
 // SaasEntryServiceClient is the client API for SaasEntryService service.
@@ -51,6 +52,8 @@ type SaasEntryServiceClient interface {
 	GetFollowingFullList(ctx context.Context, in *FollowedListRequest, opts ...grpc.CallOption) (*FollowingFullListResponse, error)
 	// Retrieves a full profiles from IDs
 	GetProfilesByIDs(ctx context.Context, in *BlockListRequest, opts ...grpc.CallOption) (*FollowingFullListResponse, error)
+	// Retrieves raw tweet event data by tweet ID.
+	GetRawTweetEvent(ctx context.Context, in *GetRawTweetEventRequest, opts ...grpc.CallOption) (*GetRawTweetEventResponse, error)
 }
 
 type saasEntryServiceClient struct {
@@ -141,6 +144,16 @@ func (c *saasEntryServiceClient) GetProfilesByIDs(ctx context.Context, in *Block
 	return out, nil
 }
 
+func (c *saasEntryServiceClient) GetRawTweetEvent(ctx context.Context, in *GetRawTweetEventRequest, opts ...grpc.CallOption) (*GetRawTweetEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRawTweetEventResponse)
+	err := c.cc.Invoke(ctx, SaasEntryService_GetRawTweetEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SaasEntryServiceServer is the server API for SaasEntryService service.
 // All implementations must embed UnimplementedSaasEntryServiceServer
 // for forward compatibility.
@@ -163,6 +176,8 @@ type SaasEntryServiceServer interface {
 	GetFollowingFullList(context.Context, *FollowedListRequest) (*FollowingFullListResponse, error)
 	// Retrieves a full profiles from IDs
 	GetProfilesByIDs(context.Context, *BlockListRequest) (*FollowingFullListResponse, error)
+	// Retrieves raw tweet event data by tweet ID.
+	GetRawTweetEvent(context.Context, *GetRawTweetEventRequest) (*GetRawTweetEventResponse, error)
 	mustEmbedUnimplementedSaasEntryServiceServer()
 }
 
@@ -196,6 +211,9 @@ func (UnimplementedSaasEntryServiceServer) GetFollowingFullList(context.Context,
 }
 func (UnimplementedSaasEntryServiceServer) GetProfilesByIDs(context.Context, *BlockListRequest) (*FollowingFullListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetProfilesByIDs not implemented")
+}
+func (UnimplementedSaasEntryServiceServer) GetRawTweetEvent(context.Context, *GetRawTweetEventRequest) (*GetRawTweetEventResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRawTweetEvent not implemented")
 }
 func (UnimplementedSaasEntryServiceServer) mustEmbedUnimplementedSaasEntryServiceServer() {}
 func (UnimplementedSaasEntryServiceServer) testEmbeddedByValue()                          {}
@@ -362,6 +380,24 @@ func _SaasEntryService_GetProfilesByIDs_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SaasEntryService_GetRawTweetEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRawTweetEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SaasEntryServiceServer).GetRawTweetEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SaasEntryService_GetRawTweetEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SaasEntryServiceServer).GetRawTweetEvent(ctx, req.(*GetRawTweetEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SaasEntryService_ServiceDesc is the grpc.ServiceDesc for SaasEntryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -400,6 +436,10 @@ var SaasEntryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetProfilesByIDs",
 			Handler:    _SaasEntryService_GetProfilesByIDs_Handler,
+		},
+		{
+			MethodName: "GetRawTweetEvent",
+			Handler:    _SaasEntryService_GetRawTweetEvent_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

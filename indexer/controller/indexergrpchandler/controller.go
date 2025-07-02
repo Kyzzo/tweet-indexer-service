@@ -21,6 +21,7 @@ type SaasGRPCHandler struct {
 	prfSvc    service.Profile
 	follRepo  repository.FollowingRepository
 	twtSvc    twitterprofile.Repository
+	rawRepo   repository.RawTweetRepository
 	svc       dummyaccount.Service
 }
 
@@ -33,6 +34,7 @@ func NewSaasGRPCHandler(cfg *config.Config, conn *mongodb.MongoConnection, dummS
 	followSvc := service.NewFollowingIndexer(*cfg, conn, dummSvc)
 	prfSvc := service.NewProfile(*cfg, conn, dummSvc)
 	twtSvc := twitterprofile.NewRepository(conn)
+	rawRepo := repository.NewRawTweetRepo(conn)
 
 	return &SaasGRPCHandler{
 		followSvc: followSvc,
@@ -40,6 +42,7 @@ func NewSaasGRPCHandler(cfg *config.Config, conn *mongodb.MongoConnection, dummS
 		follRepo:  follRepo,
 		svc:       dummSvc,
 		twtSvc:    twtSvc,
+		rawRepo:   rawRepo,
 	}
 }
 
@@ -233,6 +236,23 @@ func (h *SaasGRPCHandler) GetProfilesByIDs(ctx context.Context, req *grpcsaasent
 	}
 	resp := &grpcsaasentry.FollowingFullListResponse{
 		Profiles: profiles,
+	}
+	return resp, nil
+}
+
+func (h *SaasGRPCHandler) GetRawTweetEvent(ctx context.Context, req *grpcsaasentry.GetRawTweetEventRequest) (*grpcsaasentry.GetRawTweetEventResponse, error) {
+	if req == nil || req.TweetId == "" {
+		return nil, errors.New("invalid request: tweet ID is required")
+	}
+
+	rawTweetEvent, err := h.rawRepo.FindAllByID(ctx, req.TweetId)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving raw tweet event.")
+		return nil, err
+	}
+
+	resp := &grpcsaasentry.GetRawTweetEventResponse{
+		RawTweetEvent: rawTweetEvent.RawEntry,
 	}
 	return resp, nil
 }
