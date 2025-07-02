@@ -6,13 +6,14 @@ import (
 
 	proto "github.com/jeetdotso/tweet-indexer-service/proto"
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
+	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 )
 
 type CategoryType int
 
 const (
-	CategoryTypeMEME CategoryType = iota
-	CategoryTypeTRADER
+	CategoryTypeTRADER CategoryType = iota
+	CategoryTypeMEME
 	CategoryTypeGrokToken
 )
 
@@ -31,6 +32,17 @@ func (c CategoryType) String() string {
 
 func ToCategoryString(cat CategoryType) string {
 	return cat.String()
+}
+func ToCategoryType(t twitterprofile.TagType) CategoryType {
+	switch t {
+	case twitterprofile.TAG_TRADER:
+		return CategoryTypeTRADER
+	case twitterprofile.TAG_MEME:
+		return CategoryTypeMEME
+
+	default:
+		return CategoryTypeTRADER
+	}
 }
 
 type TweetEvent struct {

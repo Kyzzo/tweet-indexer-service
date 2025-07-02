@@ -272,7 +272,7 @@ func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tagType twitte
 		logg.Log.Error().Caller().Ctx(ctx).Msg("HandleTweetEvent received a tweet with empty ID")
 		return
 	}
-	tweetEvent := mapper.MapTweetToEvent(tweet)
+	tweetEvent := mapper.MapTweetToEvent(tweet, tagType)
 	if tweetEvent.CreatedAt.Before(time.Now().Add(-time.Hour)) {
 		logg.Log.Warn().Caller().Ctx(ctx).Str("tweetID", tweetEvent.ID).Msg("Tweet event is too old, skipping.")
 		return
@@ -305,7 +305,7 @@ func (ti TokenTweetIndexer) HandleTweetEventRollback(ctx context.Context, tweet 
 		return
 	}
 
-	tweetEvent := mapper.MapTweetToEvent(tweet)
+	tweetEvent := mapper.MapTweetToEvent(tweet, twitterprofile.TAG_TRADER)
 	//Check if tweet already exists
 	exist, err := ti.tweetRepo.FindAllByID(ctx, tweetEvent.ID)
 	if err != nil {

@@ -5,10 +5,11 @@ import (
 
 	"github.com/jeetdotso/tweet-indexer-service/indexer/model"
 	twitterTypes "github.com/jeetdotso/tweet-indexer-service/scrape/internals/api/types"
+	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 )
 
 // ✅ Convert Twitter API response to TweetEvent
-func MapTweetToEvent(tweet *twitterTypes.TweetInfo) *model.TweetEvent {
+func MapTweetToEvent(tweet *twitterTypes.TweetInfo, tagType twitterprofile.TagType) *model.TweetEvent {
 	return &model.TweetEvent{
 		ID:                tweet.ID,
 		UserID:            tweet.UserID,
@@ -22,6 +23,7 @@ func MapTweetToEvent(tweet *twitterTypes.TweetInfo) *model.TweetEvent {
 		Text:              tweet.Text,
 		RetweetedByID:     tweet.RetweetedByID,
 		CapturedAt:        time.Now(),
+		Category:          model.ToCategoryType(tagType),
 		MediaAttachments:  flattenAttachments(tweet.MediaAttachments),
 	}
 }
