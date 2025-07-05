@@ -369,3 +369,65 @@ func (f *FollowingIndexer) streamFollowingsByUserID(ctx context.Context, userID 
 	return nil
 
 }
+
+func (f *FollowingIndexer) GetByUsernameAndAdd(ctx context.Context, username, tag string) error {
+	if username == "" {
+		logg.Log.Warn().Caller().Ctx(ctx).Msg("Username is empty, skipping.")
+		return nil
+	}
+
+	if username == "" {
+		logg.Log.Warn().Caller().Ctx(ctx).Msg("Username is empty, skipping.")
+		return fmt.Errorf("username is empty")
+	}
+	//check repo
+	exists, err := f.twtPrf.FindFetchedUserByTwitterHandle(ctx, username)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Failed to check if user %s exists in twitter profile repo.", username)
+		return err
+	}
+	if exists != nil {
+		logg.Log.Info().Caller().Ctx(ctx).Msgf("User %s already exists in twitter profile repo, skipping.", username)
+		return ErrProfileAlreadyExists
+	}
+	user, err := f.prfSvc.GetProfileByUsername(ctx, username)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to get user ID by username.")
+		return ErrProfileNotFound
+	}
+	if user == nil || user.ID == "" {
+		logg.Log.Error().Caller().Ctx(ctx).Err(ErrProfileNotFound).Msgf("User ID for %s is empty, skipping.", username)
+		return ErrProfileNotFound
+	}
+	fl := user.ToFollowingUser()
+	var rTag string
+	switch strings.ToLower(strings.TrimSpace(tag)) {
+	case "trader":
+		rTag = twitterprofile.TAG_TRADER.String()
+	case "meme":
+		rTag = twitterprofile.TAG_MEME.String()
+	case "influencer":
+		rTag = twitterprofile.TAG_INFLUENCER.String()
+	default:
+		rTag = twitterprofile.TAG_TRADER.String()
+	}
+
+	r := &twitterprofile.FetchedProfile{
+		ID:         fl.ID,
+		UserName:   fl.UserName,
+		Handle:     fl.Handle,
+		ProfileImg: fl.ProfileImg,
+		Followers:  fl.Followers,
+		Following:  fl.Following,
+		Verified:   fl.Verified,
+		Tag:        rTag,
+		Status:     twitterprofile.NEW_PROFILE, // 0: not tracked, 1: tracking, 2: not tracking
+		CapturedAt: time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	if err := f.twtPrf.UpdateOrInsertFetched(ctx, r); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to upsert twitter profile.")
+		return ErrDatabaseError
+	}
+	return nil
+}

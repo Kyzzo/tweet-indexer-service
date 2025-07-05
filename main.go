@@ -77,6 +77,7 @@ func registerHttp(cfg *config.Config, conn *mongodb.MongoConnection, dummSvc dum
 	r.GET("/public/indexer/admin/list", adminCtrl.GetList)
 	r.POST("/public/indexer/admin/multi/manual", adminCtrl.AddMultiManual)
 	r.GET("/public/indexer/admin/top", adminCtrl.GetTop1500)
+	r.POST("/public/indexer/admin/single/list", adminCtrl.AddSingleToList)
 	//admin panel
 	r.GET("/public/indexer/admin-panel/scrape/cycle/:type", adminPnlCtrl.FindByCycleTypeAndLimit)
 	r.GET("/public/indexer/admin-panel/scrape/cycle/latest", adminPnlCtrl.GetLatestScrapeCycle)

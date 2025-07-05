@@ -238,3 +238,27 @@ func (ctrl AdminController) ChangeTagByID(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Tag updated successfully", "id": id})
 }
+
+func (ctrl AdminController) AddSingleToList(ctx *gin.Context) {
+	var req struct {
+		Username string `json:"username"`
+		Tag      string `json:"tag"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	if req.Username == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "username cannot be empty"})
+		return
+	}
+
+	err := ctrl.fllIdx.GetByUsernameAndAdd(ctx.Request.Context(), req.Username, req.Tag)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, gin.H{"message": "Following list added successfully", "username": req.Username})
+}
