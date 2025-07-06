@@ -29,7 +29,10 @@ message GetProfileResponse {
    string message = 3; // Additional message, if any. 
 }
 
-
+message TopProfileResponse {
+  repeated Profile profiles = 1; // List of top profiles.
+  bool success = 2; // Indicates if the request was successful.
+}
 message AddFollowingRequest {
   string id = 1;    // The deck identifier.
 }
@@ -100,6 +103,8 @@ service SaasEntryService {
   rpc GetProfilesByIDs(BlockListRequest) returns (FollowingFullListResponse);
   //Retrieves raw tweet event data by tweet ID.
   rpc GetRawTweetEvent(GetRawTweetEventRequest) returns (GetRawTweetEventResponse);
+  // Retrieves a list of tracked Profiles.
+  rpc GetTrackedProfiles(EmptyRequest) returns (TopProfileResponse);
 
 
 }

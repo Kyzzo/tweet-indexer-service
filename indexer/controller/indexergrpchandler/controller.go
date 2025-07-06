@@ -11,6 +11,7 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
 	"github.com/jeetdotso/tweet-indexer-service/proto/grpcsaasentry"
+	"github.com/jeetdotso/tweet-indexer-service/shared"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 	"github.com/jeetdotso/tweet-indexer-service/util"
 )
@@ -253,6 +254,42 @@ func (h *SaasGRPCHandler) GetRawTweetEvent(ctx context.Context, req *grpcsaasent
 
 	resp := &grpcsaasentry.GetRawTweetEventResponse{
 		RawTweetEvent: rawTweetEvent.RawEntry,
+	}
+	return resp, nil
+}
+
+func (h *SaasGRPCHandler) GetTrackedProfiles(ctx context.Context, req *grpcsaasentry.EmptyRequest) (*grpcsaasentry.TopProfileResponse, error) {
+	profiles, err := h.twtSvc.GetTopHitRaw(ctx, shared.MAX_ACCOUNTS_RUN, []string{twitterprofile.TAG_TRADER.String()})
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving tracked profiles.")
+		return nil, err
+	}
+
+	if len(profiles) == 0 {
+		resp := &grpcsaasentry.TopProfileResponse{
+			Profiles: []*grpcsaasentry.Profile{},
+			Success:  true,
+		}
+		return resp, nil
+	}
+
+	profileList := make([]*grpcsaasentry.Profile, len(profiles))
+	for i, prf := range profiles {
+		profileList[i] = &grpcsaasentry.Profile{
+			Id:         prf.ID,
+			UserId:     prf.ID,
+			UserName:   prf.UserName,
+			Handle:     prf.Handle,
+			ProfileImg: prf.ProfileImg,
+			Followers:  int32(prf.Followers),
+			Following:  int32(prf.Following),
+			Verified:   prf.Verified,
+		}
+	}
+
+	resp := &grpcsaasentry.TopProfileResponse{
+		Profiles: profileList,
+		Success:  true,
 	}
 	return resp, nil
 }
