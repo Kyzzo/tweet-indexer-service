@@ -98,7 +98,8 @@ func (f *FollowingIndexer) ScrapeFollowingList(ctx context.Context) error {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to delete old followings.")
 		return err
 	}
-	// TODO: Add kafka for new followings for each user
+	ctl := util.CreateBackgroundContextFromExisting(ctx)
+	go f.streamAllFollowings(ctl) // Stream all followings after processing
 	return nil
 }
 
@@ -119,7 +120,9 @@ func (f *FollowingIndexer) ScrapeFollowingListById(ctx context.Context, userId s
 	}
 	userIds := map[string]struct{}{userId: {}}
 	tracking.MonitorFollowingsPipeline(ctx, userIds, SINGLE_USER_WORKER_COUNT, SINGLE_PAGE_HANDLER_COUNT, SINGLE_USER_MAX_RETRIES, SINGLE_USER_RETRY_DELAY, f.HandleFollowing, f.dummSvc)
-	// TODO: Add kafka for new followings
+	if err := f.streamFollowingsByUserID(ctx, userId); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to stream followings by user ID.")
+	}
 }
 
 func (f *FollowingIndexer) ScrapeFollowingListBySinglePage(ctx context.Context) error {
@@ -133,8 +136,9 @@ func (f *FollowingIndexer) ScrapeFollowingListBySinglePage(ctx context.Context) 
 		return nil
 	}
 	tracking.MonitorSingleFollowingPagePipeline(ctx, userIds, min(SINGLE_PAGE_WORKER_COUNT, len(userIds)), min(SINGLE_PAGE_HANDLER_COUNT, len(userIds)), SINGLE_PAGE_MAX_RETRIES, SINGLE_USER_RETRY_DELAY, f.HandleFollowing, f.dummSvc)
+	ctl := util.CreateBackgroundContextFromExisting(ctx)
+	go f.streamAllFollowings(ctl) // Stream all followings after processing
 	return nil
-	// TODO: Add kafka for new followings
 }
 
 func (f *FollowingIndexer) HandleFollowing(ctx context.Context, followedByID string, user twitterTypes.FollowingUser) {
