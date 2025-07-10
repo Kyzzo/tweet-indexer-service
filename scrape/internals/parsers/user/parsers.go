@@ -48,3 +48,33 @@ func ParseUserFromGJSON(res *gjson.Result) (*twitterTypes.User, error) {
 		UpdatedAt:  time.Now(),
 	}, nil
 }
+
+func ParseUserFromResult(res *gjson.Result) (*twitterTypes.User, error) {
+	// here res is already pointing at the { "__typename":"User", "rest_id": "...", … }
+	u := res
+
+	id := u.Get("rest_id").String()
+	name := u.Get("core.name").String()
+	handle := u.Get("core.screen_name").String()
+	img := u.Get("avatar.image_url").String()
+	followers := int(u.Get("legacy.followers_count").Int())
+	following := int(u.Get("legacy.friends_count").Int())
+	verified := u.Get("legacy.verified").Bool()
+
+	// parse created_at from core.created_at, falling back if needed
+	createdAtStr := u.Get("core.created_at").String()
+	createdAt, _ := time.Parse(time.RubyDate, createdAtStr)
+
+	return &twitterTypes.User{
+		ID:         id,
+		UserId:     id,
+		UserName:   name,
+		Handle:     handle,
+		ProfileImg: img,
+		Followers:  followers,
+		Following:  following,
+		Verified:   verified,
+		CreatedAt:  createdAt,
+		UpdatedAt:  time.Now(),
+	}, nil
+}
