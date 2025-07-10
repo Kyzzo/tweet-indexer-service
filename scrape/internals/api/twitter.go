@@ -16,9 +16,9 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func (tc *TwitterClient) commonRequest(endpoint string, params url.Values) (*gjson.Result, error) {
+func (tc *TwitterClient) commonRequest(endpoint string, params url.Values, headers *http.Header) (*gjson.Result, error) {
 	fullURL := fmt.Sprintf("%s%s?%s", tc.BaseURL, endpoint, params.Encode())
-	bodyBytes, statusCode, err := tc.Get(fullURL, nil)
+	bodyBytes, statusCode, err := tc.Get(fullURL, headers)
 	if bodyBytes == nil {
 		return nil, fmt.Errorf("cannot do the request right now")
 	}
@@ -90,7 +90,7 @@ func (tc *TwitterClient) UserID(username string) (string, error) {
 	params.Add("features", string(features))
 	params.Add("fieldToggles", string(fieldToggles))
 
-	result, err := tc.commonRequest("/i/api/graphql/32pL5BWe9WKeSK1MoPvFQQ/UserByScreenName", params)
+	result, err := tc.commonRequest("/i/api/graphql/32pL5BWe9WKeSK1MoPvFQQ/UserByScreenName", params, nil)
 	if err != nil {
 		return "", err
 	}
@@ -120,7 +120,69 @@ func (tc *TwitterClient) FullUser(username string) (*gjson.Result, error) {
 	params.Add("features", string(features))
 	params.Add("fieldToggles", string(fieldToggles))
 
-	return tc.commonRequest("/i/api/graphql/32pL5BWe9WKeSK1MoPvFQQ/UserByScreenName", params)
+	return tc.commonRequest("/i/api/graphql/32pL5BWe9WKeSK1MoPvFQQ/UserByScreenName", params, nil)
+}
+
+// FetchUsersByID looks up one or more users by their REST IDs in a single GraphQL request.
+// It returns the full gjson.Result so callers can extract name, screen_name, profile_image_url, etc.
+func (tc *TwitterClient) FetchUsersByID(host string, userIDs []string) (*gjson.Result, error) {
+	// 1) Marshal the variables payload
+	vars, _ := json.Marshal(map[string]interface{}{
+		"userIds": userIDs,
+	})
+
+	// 2) Build a features map roughly matching what the site uses
+	features, _ := json.Marshal(map[string]interface{}{
+		"payments_enabled": false,
+		"profile_label_improvements_pcf_label_in_post_enabled":              true,
+		"rweb_tipjar_consumption_enabled":                                   true,
+		"verified_phone_label_enabled":                                      false,
+		"responsive_web_graphql_skip_user_profile_image_extensions_enabled": false,
+		"responsive_web_graphql_timeline_navigation_enabled":                true,
+		// …add any other flags you’ve found the browser sending…
+	})
+
+	// 3) Build query params
+	params := url.Values{}
+	params.Add("variables", string(vars))
+	params.Add("features", string(features))
+	// Convert []*fhttp.Cookie to []*net/http.Cookie
+	var netCookies []*realhttp.Cookie
+	for _, c := range tc.Cookies {
+		netCookies = append(netCookies, &realhttp.Cookie{
+			Name:     c.Name,
+			Value:    c.Value,
+			Path:     c.Path,
+			Domain:   c.Domain,
+			Expires:  c.Expires,
+			Raw:      c.Raw,
+			Unparsed: c.Unparsed,
+			Secure:   c.Secure,
+			HttpOnly: c.HttpOnly,
+			SameSite: realhttp.SameSite(c.SameSite),
+		})
+	}
+	gc, err := CreateGrokClientWithCookies(netCookies, host)
+	if err != nil {
+		return nil, err
+	}
+	transactionID, err := gc.GenerateTransactionID("GET", "/i/api/graphql/kCBEQ-OvWNVtotaYmqG0aw/UsersByRestIds", "")
+	if err != nil {
+		return nil, err
+	}
+	// 4) Set the transaction ID in the headers
+	tc.Headers.Add("X-client-transaction-id", transactionID)
+	// 5) Call the same GraphQL path you observed in Chrome
+	//    (the long hash in the URL may change over time)
+	result, err := tc.commonRequest(
+		"/i/api/graphql/kCBEQ-OvWNVtotaYmqG0aw/UsersByRestIds",
+		params, nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (tc *TwitterClient) Following(userID string, cursor string) (*gjson.Result, error) {
@@ -162,7 +224,7 @@ func (tc *TwitterClient) Following(userID string, cursor string) (*gjson.Result,
 	params.Add("variables", string(variables))
 	params.Add("features", string(features))
 
-	return tc.commonRequest("/i/api/graphql/gsxNGYhRKA6iYYSInE9qew/Following", params)
+	return tc.commonRequest("/i/api/graphql/gsxNGYhRKA6iYYSInE9qew/Following", params, nil)
 }
 
 func (tc *TwitterClient) Followers(userID string, cursor string) (*gjson.Result, error) {
@@ -209,7 +271,7 @@ func (tc *TwitterClient) Followers(userID string, cursor string) (*gjson.Result,
 	params.Add("variables", string(variables))
 	params.Add("features", string(features))
 
-	return tc.commonRequest("/i/api/graphql/OGScL-RC4DFMsRGOCjPR6g/Followers", params)
+	return tc.commonRequest("/i/api/graphql/OGScL-RC4DFMsRGOCjPR6g/Followers", params, nil)
 }
 
 func (tc *TwitterClient) AccountTweets(userID string, cursor string) (*gjson.Result, error) {
@@ -263,7 +325,7 @@ func (tc *TwitterClient) AccountTweets(userID string, cursor string) (*gjson.Res
 	params.Add("features", string(features))
 	params.Add("fieldToggles", string(fieldToggles))
 
-	return tc.commonRequest("/i/api/graphql/MpOINUGH_YVb2BKjYZOPaQ/UserTweets", params)
+	return tc.commonRequest("/i/api/graphql/MpOINUGH_YVb2BKjYZOPaQ/UserTweets", params, nil)
 }
 
 func (tc *TwitterClient) GetTweet(tweetID, username string) (*gjson.Result, error) {
