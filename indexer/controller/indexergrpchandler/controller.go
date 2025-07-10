@@ -136,7 +136,7 @@ func (h *SaasGRPCHandler) AddFollowingsByUsername(ctx context.Context, req *grpc
 	if req == nil || req.Username == "" {
 		return nil, errors.New("invalid request: usernames are required")
 	}
-	id, err := h.prfSvc.GetProfileByUsername(ctx, req.Username)
+	usr, err := h.prfSvc.GetProfileByUsername(ctx, req.Username)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving profile by username.")
 		resp := &grpcsaasentry.AddFollowingsUsernameResponse{
@@ -146,7 +146,7 @@ func (h *SaasGRPCHandler) AddFollowingsByUsername(ctx context.Context, req *grpc
 		}
 		return resp, err
 	}
-	if id == nil || id.ID == "" {
+	if usr == nil || usr.ID == "" {
 		resp := &grpcsaasentry.AddFollowingsUsernameResponse{
 			Id:      &grpcsaasentry.Profile{},
 			Message: "Profile not found",
@@ -155,20 +155,25 @@ func (h *SaasGRPCHandler) AddFollowingsByUsername(ctx context.Context, req *grpc
 		return resp, errProfileNotFound
 	}
 
+	if err := h.twtSvc.UpsertUserProfile(ctx, usr); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to upsert user profile.")
+
+	}
+
 	ctl := util.CreateBackgroundContextFromExisting(ctx)
-	go h.followSvc.ScrapeFollowingListById(ctl, id.ID)
+	go h.followSvc.ScrapeFollowingListById(ctl, usr.ID)
 
 	resp := &grpcsaasentry.AddFollowingsUsernameResponse{
 		Message: "Followings are being added for the profile",
 		Id: &grpcsaasentry.Profile{
-			Id:         id.ID,
-			UserId:     id.ID,
-			UserName:   id.UserName,
-			Handle:     id.Handle,
-			ProfileImg: id.ProfileImg,
-			Followers:  int32(id.Followers),
-			Following:  int32(id.Following),
-			Verified:   id.Verified,
+			Id:         usr.ID,
+			UserId:     usr.ID,
+			UserName:   usr.UserName,
+			Handle:     usr.Handle,
+			ProfileImg: usr.ProfileImg,
+			Followers:  int32(usr.Followers),
+			Following:  int32(usr.Following),
+			Verified:   usr.Verified,
 		},
 		Success: true,
 	}
