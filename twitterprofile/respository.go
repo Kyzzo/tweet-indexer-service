@@ -15,6 +15,7 @@ import (
 )
 
 const FetchedCollection = "twitterprofiles_fetched"
+const UserProfileCollection = "twitterprofiles_user"
 
 type Repository interface {
 	/////Fecthed///////////////
@@ -33,17 +34,27 @@ type Repository interface {
 	GetAllByTag(ctx context.Context, tag string) ([]*FetchedProfile, error)
 	FindAllByIDs(ctx context.Context, ids []string) ([]FetchedProfile, error)
 	GetUniqueTags(ctx context.Context) ([]string, error)
+	FindAllFetchedProfilesNotUpdatedSince(ctx context.Context, since time.Time) ([]*FetchedProfile, error)
+	FindAllFetchedProfilesTopHitSince(ctx context.Context, since time.Time, limit int64, tags []string) ([]*FetchedProfileFull, error)
+	//////User Profile///////////////
+	FindUserProfileById(ctx context.Context, id string) (*UserProfile, error)
+	UpsertUserProfile(ctx context.Context, profile *twiterTypes.User) error
+	FindAllUserProfiles(ctx context.Context) ([]*UserProfile, error)
+	FindAllProfilesNotUpdatedSince(ctx context.Context, since time.Time) ([]*UserProfile, error)
 }
 type MongoRepository struct {
 	conn      *mongodb.MongoConnection
 	fetchRepo *persistence.AbstractMongoRepository[*FetchedProfile]
+	userRepo  *persistence.AbstractMongoRepository[*UserProfile]
 }
 
 func NewRepository(conn *mongodb.MongoConnection) Repository {
 	fetchRepo := persistence.NewAbstractRepository[*FetchedProfile](conn, FetchedCollection)
+	userRepo := persistence.NewAbstractRepository[*UserProfile](conn, UserProfileCollection)
 	return &MongoRepository{
 		conn:      conn,
 		fetchRepo: fetchRepo,
+		userRepo:  userRepo,
 	}
 }
 
@@ -271,6 +282,42 @@ func (repo *MongoRepository) GetAllByStatus(ctx context.Context, status int) ([]
 	return profiles, nil
 }
 
+func (repo *MongoRepository) FindAllFetchedProfilesTopHitSince(
+	ctx context.Context,
+	since time.Time,
+	limit int64,
+	tags []string,
+) ([]*FetchedProfileFull, error) {
+	filter := bson.M{
+		"updated_at": bson.M{"$lt": since},
+		"status":     bson.D{{"$in", bson.A{2, 3}}}, // only include profiles with status 2 or 3
+
+	}
+	if len(tags) > 0 {
+		filter["tag"] = bson.M{"$in": tags}
+	}
+
+	opts := options.Find().SetSort(bson.D{{"follower_count", -1}}).SetLimit(limit)
+	cursor, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).Find(ctx, filter, opts)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding top hit profiles.")
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var profiles []*FetchedProfileFull
+	for cursor.Next(ctx) {
+		var profile FetchedProfileFull
+		err = cursor.Decode(&profile)
+		if err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding profile.")
+			return nil, err
+		}
+		profiles = append(profiles, &profile)
+	}
+	return profiles, nil
+}
+
 func (repo *MongoRepository) GetAllByTag(ctx context.Context, tag string) ([]*FetchedProfile, error) {
 	filter := bson.M{"tag": tag}
 	cursor, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).Find(ctx, filter)
@@ -318,6 +365,9 @@ func (repo *MongoRepository) ChangeStatusMultiple(ctx context.Context, ids []str
 	return nil
 }
 
+// GetTopHit retrieves top profiles based on follower count and status.
+// It uses an aggregation pipeline to filter, sort, and paginate results.
+// It also looks up the number of followers for each profile by joining with the
 // following.indexes
 // following_id
 func (repo *MongoRepository) GetTopHit(
@@ -521,6 +571,105 @@ func (repo *MongoRepository) FindAllByIDs(ctx context.Context, ids []string) ([]
 			continue
 		}
 		profiles = append(profiles, profile)
+	}
+	return profiles, nil
+}
+
+func (repo *MongoRepository) FindAllFetchedProfilesNotUpdatedSince(ctx context.Context, since time.Time) ([]*FetchedProfile, error) {
+	filter := bson.M{"updated_at": bson.M{"$lt": since}}
+	cursor, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).Find(ctx, filter)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding fetched profiles not updated since.")
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var profiles []*FetchedProfile
+	for cursor.Next(ctx) {
+		var profile FetchedProfile
+		if err := cursor.Decode(&profile); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding fetched profile.")
+			continue
+		}
+		profiles = append(profiles, &profile)
+	}
+	return profiles, nil
+}
+
+func (repo *MongoRepository) FindUserProfileById(ctx context.Context, id string) (*UserProfile, error) {
+	filter := bson.M{"_id": id}
+	var profile UserProfile
+	err := repo.conn.Datastore.Collection(UserProfileCollection).FindOne(ctx, filter).Decode(&profile)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding user profile by ID.")
+		return nil, err
+	}
+	return &profile, nil
+}
+
+func (repo *MongoRepository) UpsertUserProfile(ctx context.Context, profile *twiterTypes.User) error {
+	filter := bson.M{
+		"_id": profile.ID,
+		// if profile img is new || username or handle is new, update
+		"username":    profile.UserName,
+		"handle":      profile.Handle,
+		"profile_img": profile.ProfileImg,
+	}
+	prf := &UserProfile{
+		ID:         profile.ID,
+		UserName:   profile.UserName,
+		Handle:     profile.Handle,
+		ProfileImg: profile.ProfileImg,
+		Followers:  profile.Followers,
+		Following:  profile.Following,
+		Verified:   profile.Verified,
+		UpdatedAt:  time.Now().UTC(),
+	}
+	update := bson.M{"$set": prf}
+	_, err := repo.conn.Datastore.Collection(UserProfileCollection).UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (repo *MongoRepository) FindAllUserProfiles(ctx context.Context) ([]*UserProfile, error) {
+	cursor, err := repo.conn.Datastore.Collection(UserProfileCollection).Find(ctx, bson.M{})
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding all user profiles.")
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var profiles []*UserProfile
+	for cursor.Next(ctx) {
+		var profile UserProfile
+		if err := cursor.Decode(&profile); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user profile.")
+			continue
+		}
+		profiles = append(profiles, &profile)
+	}
+	return profiles, nil
+}
+
+func (repo *MongoRepository) FindAllProfilesNotUpdatedSince(ctx context.Context, since time.Time) ([]*UserProfile, error) {
+	filter := bson.M{"updated_at": bson.M{"$lt": since}}
+	cursor, err := repo.conn.Datastore.Collection(UserProfileCollection).Find(ctx, filter)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding user profiles not updated since.")
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var profiles []*UserProfile
+	for cursor.Next(ctx) {
+		var profile UserProfile
+		if err := cursor.Decode(&profile); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user profile.")
+			continue
+		}
+		profiles = append(profiles, &profile)
 	}
 	return profiles, nil
 }

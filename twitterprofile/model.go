@@ -51,6 +51,21 @@ type FetchedProfile struct {
 	CapturedAt time.Time `bson:"captured_at"     json:"captured_at"`
 	UpdatedAt  time.Time `bson:"updated_at"      json:"updated_at"`
 }
+type UserProfile struct {
+	ID         string    `bson:"_id" json:"id"`
+	UserName   string    `bson:"user_name" json:"user_name"`
+	Handle     string    `bson:"handle"   json:"handle"`
+	ProfileImg string    `bson:"profile_img" json:"profile_img"`
+	Followers  int       `bson:"follower_count"  json:"follower_count"`
+	Following  int       `bson:"following_count" json:"following_count"`
+	Verified   bool      `bson:"verified"        json:"verified"`
+	UpdatedAt  time.Time `bson:"updated_at"      json:"updated_at"`
+}
+
+func (f *UserProfile) GetID() any {
+	return f.ID
+}
+
 type FetchedProfileFull struct {
 	ID              string    `bson:"_id" json:"id"`
 	UserName        string    `bson:"user_name" json:"user_name"`
