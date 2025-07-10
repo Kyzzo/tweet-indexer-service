@@ -127,6 +127,7 @@ func Schedulers(conn *mongodb.MongoConnection, cfg *config.Config, dummSvc dummy
 		scrapeCycle = sched.NewScrapeCycleScheduler(cfg, conn, tags)
 		followCycle = sched.NewFollowingCycleScheduler(cfg, conn, dummSvc, tags)
 		prfAnalysis = sched.NewProfileAnalysis(cfg, conn, dummSvc)
+		prfUpdater  = sched.NewProfileUpdater(cfg, conn, dummSvc)
 	)
 
 	return []scheduler.Scheduler{
@@ -135,6 +136,7 @@ func Schedulers(conn *mongodb.MongoConnection, cfg *config.Config, dummSvc dummy
 		followCycle,
 		scrapeCycle,
 		prfAnalysis,
+		prfUpdater,
 	}
 }
 
