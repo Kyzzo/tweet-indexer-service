@@ -140,7 +140,7 @@ func (h *SaasGRPCHandler) AddFollowingsByUsername(ctx context.Context, req *grpc
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving profile by username.")
 		resp := &grpcsaasentry.AddFollowingsUsernameResponse{
-			Id:      "",
+			Id:      &grpcsaasentry.Profile{},
 			Message: "Profile not found",
 			Success: false,
 		}
@@ -148,7 +148,7 @@ func (h *SaasGRPCHandler) AddFollowingsByUsername(ctx context.Context, req *grpc
 	}
 	if id == nil || id.ID == "" {
 		resp := &grpcsaasentry.AddFollowingsUsernameResponse{
-			Id:      "",
+			Id:      &grpcsaasentry.Profile{},
 			Message: "Profile not found",
 			Success: false,
 		}
@@ -160,7 +160,16 @@ func (h *SaasGRPCHandler) AddFollowingsByUsername(ctx context.Context, req *grpc
 
 	resp := &grpcsaasentry.AddFollowingsUsernameResponse{
 		Message: "Followings are being added for the profile",
-		Id:      id.ID,
+		Id: &grpcsaasentry.Profile{
+			Id:         id.ID,
+			UserId:     id.ID,
+			UserName:   id.UserName,
+			Handle:     id.Handle,
+			ProfileImg: id.ProfileImg,
+			Followers:  int32(id.Followers),
+			Following:  int32(id.Following),
+			Verified:   id.Verified,
+		},
 		Success: true,
 	}
 	return resp, nil
@@ -262,6 +271,42 @@ func (h *SaasGRPCHandler) GetTrackedProfiles(ctx context.Context, req *grpcsaase
 	profiles, err := h.twtSvc.GetTopHitRaw(ctx, shared.MAX_ACCOUNTS_RUN, []string{twitterprofile.TAG_TRADER.String()})
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving tracked profiles.")
+		return nil, err
+	}
+
+	if len(profiles) == 0 {
+		resp := &grpcsaasentry.TopProfileResponse{
+			Profiles: []*grpcsaasentry.Profile{},
+			Success:  true,
+		}
+		return resp, nil
+	}
+
+	profileList := make([]*grpcsaasentry.Profile, len(profiles))
+	for i, prf := range profiles {
+		profileList[i] = &grpcsaasentry.Profile{
+			Id:         prf.ID,
+			UserId:     prf.ID,
+			UserName:   prf.UserName,
+			Handle:     prf.Handle,
+			ProfileImg: prf.ProfileImg,
+			Followers:  int32(prf.Followers),
+			Following:  int32(prf.Following),
+			Verified:   prf.Verified,
+		}
+	}
+
+	resp := &grpcsaasentry.TopProfileResponse{
+		Profiles: profileList,
+		Success:  true,
+	}
+	return resp, nil
+}
+
+func (h *SaasGRPCHandler) GetAllUserProfiles(ctx context.Context, req *grpcsaasentry.EmptyRequest) (*grpcsaasentry.TopProfileResponse, error) {
+	profiles, err := h.twtSvc.FindAllUserProfiles(ctx)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving all user profiles.")
 		return nil, err
 	}
 

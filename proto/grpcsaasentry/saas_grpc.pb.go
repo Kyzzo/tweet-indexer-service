@@ -29,6 +29,7 @@ const (
 	SaasEntryService_GetProfilesByIDs_FullMethodName             = "/grpcsaasentry.SaasEntryService/GetProfilesByIDs"
 	SaasEntryService_GetRawTweetEvent_FullMethodName             = "/grpcsaasentry.SaasEntryService/GetRawTweetEvent"
 	SaasEntryService_GetTrackedProfiles_FullMethodName           = "/grpcsaasentry.SaasEntryService/GetTrackedProfiles"
+	SaasEntryService_GetAllUserProfiles_FullMethodName           = "/grpcsaasentry.SaasEntryService/GetAllUserProfiles"
 )
 
 // SaasEntryServiceClient is the client API for SaasEntryService service.
@@ -57,6 +58,8 @@ type SaasEntryServiceClient interface {
 	GetRawTweetEvent(ctx context.Context, in *GetRawTweetEventRequest, opts ...grpc.CallOption) (*GetRawTweetEventResponse, error)
 	// Retrieves a list of tracked Profiles.
 	GetTrackedProfiles(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*TopProfileResponse, error)
+	// Return all user profiles
+	GetAllUserProfiles(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*TopProfileResponse, error)
 }
 
 type saasEntryServiceClient struct {
@@ -167,6 +170,16 @@ func (c *saasEntryServiceClient) GetTrackedProfiles(ctx context.Context, in *Emp
 	return out, nil
 }
 
+func (c *saasEntryServiceClient) GetAllUserProfiles(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*TopProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TopProfileResponse)
+	err := c.cc.Invoke(ctx, SaasEntryService_GetAllUserProfiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SaasEntryServiceServer is the server API for SaasEntryService service.
 // All implementations must embed UnimplementedSaasEntryServiceServer
 // for forward compatibility.
@@ -193,6 +206,8 @@ type SaasEntryServiceServer interface {
 	GetRawTweetEvent(context.Context, *GetRawTweetEventRequest) (*GetRawTweetEventResponse, error)
 	// Retrieves a list of tracked Profiles.
 	GetTrackedProfiles(context.Context, *EmptyRequest) (*TopProfileResponse, error)
+	// Return all user profiles
+	GetAllUserProfiles(context.Context, *EmptyRequest) (*TopProfileResponse, error)
 	mustEmbedUnimplementedSaasEntryServiceServer()
 }
 
@@ -232,6 +247,9 @@ func (UnimplementedSaasEntryServiceServer) GetRawTweetEvent(context.Context, *Ge
 }
 func (UnimplementedSaasEntryServiceServer) GetTrackedProfiles(context.Context, *EmptyRequest) (*TopProfileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTrackedProfiles not implemented")
+}
+func (UnimplementedSaasEntryServiceServer) GetAllUserProfiles(context.Context, *EmptyRequest) (*TopProfileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAllUserProfiles not implemented")
 }
 func (UnimplementedSaasEntryServiceServer) mustEmbedUnimplementedSaasEntryServiceServer() {}
 func (UnimplementedSaasEntryServiceServer) testEmbeddedByValue()                          {}
@@ -434,6 +452,24 @@ func _SaasEntryService_GetTrackedProfiles_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SaasEntryService_GetAllUserProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SaasEntryServiceServer).GetAllUserProfiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SaasEntryService_GetAllUserProfiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SaasEntryServiceServer).GetAllUserProfiles(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SaasEntryService_ServiceDesc is the grpc.ServiceDesc for SaasEntryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -480,6 +516,10 @@ var SaasEntryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTrackedProfiles",
 			Handler:    _SaasEntryService_GetTrackedProfiles_Handler,
+		},
+		{
+			MethodName: "GetAllUserProfiles",
+			Handler:    _SaasEntryService_GetAllUserProfiles_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
