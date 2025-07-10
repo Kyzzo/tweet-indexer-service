@@ -76,6 +76,53 @@ func (am *AccountMonitor) GetUser(ctx context.Context, username string) (*twitte
 	return userParsers.ParseUserFromGJSON(r)
 }
 
+// GetUserByID fetches exactly one user.
+func (am *AccountMonitor) GetUserByID(ctx context.Context, host string, userID string) (*twitterTypes.User, error) {
+	// FetchUsersByID always returns a gjson.Result whose
+	// array lives at data.usersByRestIds.results
+	res, err := am.twitterAPI.FetchUsersByID(host, []string{userID})
+	if err != nil {
+		return nil, err
+	}
+	// Drill down into the first element of the results array
+	usersArr := res.Get("data.users").Array()
+	if len(usersArr) == 0 {
+		return nil, fmt.Errorf("no user found for id %s", userID)
+	}
+
+	// Parse that single element
+	result := usersArr[0].Get("result")
+	return userParsers.ParseUserFromResult(&result)
+}
+
+// GetUserByIDs fetches many users in one shot.
+func (am *AccountMonitor) GetUserByIDs(ctx context.Context, host string, userIDs []string) ([]*twitterTypes.User, error) {
+	res, err := am.twitterAPI.FetchUsersByID(host, userIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	raw := res.Get("data.users").Array()
+	users := make([]*twitterTypes.User, 0, len(raw))
+
+	for _, item := range raw {
+		inner := item.Get("result")
+		u, err := userParsers.ParseUserFromResult(&inner)
+		if err != nil {
+			logg.Log.
+				Warn().
+				Caller().
+				Ctx(ctx).
+				Str("rest_id", item.Get("rest_id").String()).
+				Msg("skipping malformed user record")
+			continue
+		}
+		users = append(users, u)
+	}
+
+	return users, nil
+}
+
 func (am *AccountMonitor) MonitorTweets(ctx context.Context, username string, handleTweet func(ctx context.Context, twt *twitterTypes.TweetInfo)) {
 	UserID, _ := cache.GetUserID(username)
 	r, _ := am.twitterAPI.AccountTweets(UserID, "")

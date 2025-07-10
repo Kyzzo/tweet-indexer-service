@@ -13,11 +13,13 @@ import (
 
 // get a profile by username
 type Profile struct {
+	host    string
 	dummSvc dummyaccount.Service
 }
 
 func NewProfile(cfg config.Config, conn *mongodb.MongoConnection, dummySvc dummyaccount.Service) Profile {
 	return Profile{
+		host:    cfg.Services.GrokAPIServices.Host,
 		dummSvc: dummySvc,
 	}
 }
@@ -34,4 +36,32 @@ func (p *Profile) GetProfileByUsername(ctx context.Context, username string) (*t
 		}
 	}()
 	return twtApi.GetUser(ctx, username)
+}
+
+func (p *Profile) GetProfileById(ctx context.Context, id string) (*twitterTypes.User, error) {
+	twtApi, selAcc, err := tracking.NewAccountMonitor(ctx, p.dummSvc)
+	if err != nil {
+		logg.Log.Error().Caller().Msgf("Error creating account monitor: %v", err)
+		return nil, err
+	}
+	defer func() {
+		if err = p.dummSvc.LogOut(ctx, selAcc.UserName); err != nil {
+			logg.Log.Error().Caller().Msgf("Error logging out dummy account: %v", err)
+		}
+	}()
+	return twtApi.GetUserByID(ctx, p.host, id)
+}
+
+func (p *Profile) GetMultiProfilesByIds(ctx context.Context, ids []string) ([]*twitterTypes.User, error) {
+	twtApi, selAcc, err := tracking.NewAccountMonitor(ctx, p.dummSvc)
+	if err != nil {
+		logg.Log.Error().Caller().Msgf("Error creating account monitor: %v", err)
+		return nil, err
+	}
+	defer func() {
+		if err = p.dummSvc.LogOut(ctx, selAcc.UserName); err != nil {
+			logg.Log.Error().Caller().Msgf("Error logging out dummy account: %v", err)
+		}
+	}()
+	return twtApi.GetUserByIDs(ctx, p.host, ids)
 }
