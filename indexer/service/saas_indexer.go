@@ -135,19 +135,19 @@ func (si *SaasIndexer) streamTweet(ctx context.Context, saasEvt model.SaasEvent)
 		// Produce message to Kafka
 		if err = si.memeProducer.Produce([]byte(LIVE_KEY), b); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
-
+			return
 		}
+		logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", saasEvt.ID).Str("topic", REVIEW_TOPIC_CON_MEME).Msg("Saas Tweet event sent!")
 	case model.CategoryTypeTRADER:
 		// Produce message to Kafka
 		if err = si.traderProducer.Produce([]byte(LIVE_KEY), b); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
-
+			return
 		}
+		logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", saasEvt.ID).Str("topic", REVIEW_TOPIC_CON_TRADER).Msg("Saas Tweet event sent!")
 	default:
 		return
 
 	}
-
-	logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", saasEvt.ID).Msg("Saas Tweet event sent!")
 
 }
