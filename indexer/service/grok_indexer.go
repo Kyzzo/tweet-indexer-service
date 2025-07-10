@@ -127,12 +127,7 @@ func (gi GrokIndexer) streamGrok(ctx context.Context, grokEvent model.GrokEvent)
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to save tweet event.")
 		return
 	}
-	// TODO: Add Back IN after testing phase
-	// if !grokEvent.IsShill {
-	// 	return
-	// }
 	if !grokEvent.IsShill {
-		grokEvent.TokensShilled = []string{"NOT_SHILL"}
 		return
 	}
 
