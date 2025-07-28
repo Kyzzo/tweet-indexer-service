@@ -41,6 +41,7 @@ var (
 
 const (
 	FOLLOW_KEY                = "followings"
+	NEW_USER_KEY              = "new_user"
 	SINGLE_PAGE_WORKER_COUNT  = 10
 	SINGLE_PAGE_HANDLER_COUNT = 20
 	SINGLE_PAGE_MAX_RETRIES   = 3
@@ -120,7 +121,7 @@ func (f *FollowingIndexer) ScrapeFollowingListById(ctx context.Context, userId s
 	}
 	userIds := map[string]struct{}{userId: {}}
 	tracking.MonitorFollowingsPipeline(ctx, userIds, SINGLE_USER_WORKER_COUNT, SINGLE_PAGE_HANDLER_COUNT, SINGLE_USER_MAX_RETRIES, SINGLE_USER_RETRY_DELAY, f.HandleFollowing, f.dummSvc)
-	if err := f.streamFollowingsByUserID(ctx, userId); err != nil {
+	if err := f.streamFollowingsByUserID(ctx, userId, NEW_USER_KEY); err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to stream followings by user ID.")
 	}
 }
@@ -326,7 +327,7 @@ func (f *FollowingIndexer) streamAllFollowings(ctx context.Context) {
 	}
 
 	for userID := range userIds {
-		if err := f.streamFollowingsByUserID(ctx, userID); err != nil {
+		if err := f.streamFollowingsByUserID(ctx, userID, FOLLOW_KEY); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Failed to stream followings for user ID: %s", userID)
 			continue
 		}
@@ -334,7 +335,7 @@ func (f *FollowingIndexer) streamAllFollowings(ctx context.Context) {
 	return
 }
 
-func (f *FollowingIndexer) streamFollowingsByUserID(ctx context.Context, userID string) error {
+func (f *FollowingIndexer) streamFollowingsByUserID(ctx context.Context, userID, key string) error {
 	defer func() {
 		if r := recover(); r != nil {
 			logg.Log.Error().
@@ -365,7 +366,7 @@ func (f *FollowingIndexer) streamFollowingsByUserID(ctx context.Context, userID 
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to marshal proto message.")
 		return err
 	}
-	if err = f.followProducer.Produce([]byte(FOLLOW_KEY), b); err != nil {
+	if err = f.followProducer.Produce([]byte(key), b); err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce followings stream message.")
 		return err
 
