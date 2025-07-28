@@ -37,13 +37,28 @@ jobs:
           image-name: ${{ env.IMAGE_NAME }}
           image-version: ${{ steps.vars.outputs.sha_short }}-staging
 
-      - name: Build image and Push to tweet-indexer Prod
+      - name: Build image and Push to tweet-indexer-service Prod
         uses: sentimex-ai/git-action-do-build-push@v1.4
         if: ${{ steps.vars.outputs.branch == env.PRODUCTION_BRANCH }}
         with:
           do-access-token: ${{ secrets.DO_ACCESS_TOKEN }}
           image-name: ${{ env.IMAGE_NAME }}
           image-version: ${{ steps.vars.outputs.sha_short }}-production
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_ACCESS_TOKEN }}
+
+      # ★ new: pull down your cluster credentials
+      - name: Get Kubernetes credentials
+        run: |
+          doctl kubernetes cluster kubeconfig save k8s-jkb
+
+        # ★ new: verify we can see the nodes (optional debug)
+      - name: Verify cluster access
+        run: |
+          kubectl get nodes
+          kubectl get ns
 
 #      - name: Deploy to staging k8s
 #        uses: WyriHaximus/github-action-helm3@v3
