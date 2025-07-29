@@ -117,6 +117,9 @@ func (f *FollowingIndexer) ScrapeFollowingListById(ctx context.Context, userId s
 	}
 	if exists {
 		logg.Log.Info().Caller().Ctx(ctx).Msgf("User ID %s already exists in following repo, skipping.", userId)
+		if err := f.streamFollowingsByUserID(ctx, userId, NEW_USER_KEY); err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to stream followings by user ID.")
+		}
 		return
 	}
 	userIds := map[string]struct{}{userId: {}}
