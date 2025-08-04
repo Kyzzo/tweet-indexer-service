@@ -476,10 +476,10 @@ func (repo *MongoRepository) GetTopHitRaw(
 	limit int64,
 	tags []string,
 ) ([]*FetchedProfile, error) {
-	// 0) match only your tags _and_ only statuses 2 or 3
+	// 0) match only your tags _and_ only statuses 2
 	filter := bson.D{
 		{"tag", bson.D{{"$in", tags}}},
-		{"status", bson.D{{"$in", bson.A{2, 3}}}},
+		{"status", 2},
 	}
 
 	// 1) build pipeline
@@ -487,20 +487,8 @@ func (repo *MongoRepository) GetTopHitRaw(
 		// only the docs we care about
 		{{"$match", filter}},
 
-		// assign a numeric “priority” (0 for status=2, 1 for status=3)
-		{{"$addFields", bson.D{{
-			"priority", bson.D{{
-				"$cond", bson.A{
-					bson.D{{"$eq", bson.A{"$status", 2}}},
-					0,
-					1,
-				},
-			}},
-		}}}},
-
 		// sort by that priority, then by follower_count descending
 		{{"$sort", bson.D{
-			{"priority", 1},
 			{"follower_count", -1},
 		}}},
 
