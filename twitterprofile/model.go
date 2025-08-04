@@ -26,7 +26,15 @@ const (
 	TAG_TRADER     TagType = "trader"
 	TAG_MEME       TagType = "memecoin speculator"
 	TAG_INFLUENCER TagType = "influencer"
+	TAG_NONE       TagType = "none"
+	TAG_COMPANY    TagType = "company"
+	TAG_OTHER      TagType = "other"
 )
+
+func AllTags() []TagType {
+	return []TagType{TAG_TRADER, TAG_MEME, TAG_INFLUENCER, TAG_NONE, TAG_COMPANY}
+}
+
 const (
 	NEW_PROFILE     = 0
 	REMOVED_PROFILE = 1

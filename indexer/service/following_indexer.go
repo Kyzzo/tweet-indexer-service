@@ -275,6 +275,9 @@ func (f *FollowingIndexer) HandleGrokProfile(ctx context.Context, id string, tag
 		return
 	}
 	rTag := strings.ToLower(strings.TrimSpace(tag))
+	if !contains(rTag) {
+		rTag = twitterprofile.TAG_OTHER.String() // Default to other if tag is not recognized
+	}
 
 	if err := f.twtPrf.UpdateTagById(ctx, id, rTag); err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Failed to update tag for ID: %s", id)
@@ -438,4 +441,14 @@ func (f *FollowingIndexer) GetByUsernameAndAdd(ctx context.Context, username, ta
 		return ErrDatabaseError
 	}
 	return nil
+}
+
+func contains(item string) bool {
+	slice := twitterprofile.AllTags()
+	for _, v := range slice {
+		if v.String() == item {
+			return true
+		}
+	}
+	return false
 }

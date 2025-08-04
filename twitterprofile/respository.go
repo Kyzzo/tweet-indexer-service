@@ -36,6 +36,7 @@ type Repository interface {
 	GetUniqueTags(ctx context.Context) ([]string, error)
 	FindAllFetchedProfilesNotUpdatedSince(ctx context.Context, since time.Time) ([]*FetchedProfile, error)
 	FindAllFetchedProfilesTopHitSince(ctx context.Context, since time.Time, limit int64, tags []string) ([]*FetchedProfileFull, error)
+	GetAllNoTMatchingTags(ctx context.Context, tags []string) ([]*FetchedProfile, error)
 	//////User Profile///////////////
 	FindUserProfileById(ctx context.Context, id string) (*UserProfile, error)
 	UpsertUserProfile(ctx context.Context, profile *twiterTypes.User) error
@@ -668,6 +669,28 @@ func (repo *MongoRepository) FindAllProfilesNotUpdatedSince(ctx context.Context,
 		if err := cursor.Decode(&profile); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding user profile.")
 			continue
+		}
+		profiles = append(profiles, &profile)
+	}
+	return profiles, nil
+}
+
+func (repo *MongoRepository) GetAllNoTMatchingTags(ctx context.Context, tags []string) ([]*FetchedProfile, error) {
+	tags = append(tags, "") // include empty tag to match profiles without tags
+	filter := bson.M{"tag": bson.M{"$nin": tags}}
+	cursor, err := repo.conn.Datastore.Collection(repo.fetchRepo.Collection).Find(ctx, filter)
+	if err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error getting all profiles not matching tags.")
+		return nil, err
+	}
+
+	var profiles []*FetchedProfile
+	for cursor.Next(ctx) {
+		var profile FetchedProfile
+		err = cursor.Decode(&profile)
+		if err != nil {
+			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error decoding profile.")
+			return nil, err
 		}
 		profiles = append(profiles, &profile)
 	}
