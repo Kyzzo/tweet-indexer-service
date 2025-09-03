@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+option go_package = "tweet-indexer-service/proto/grpcreviewentry";
+
+package grpcreviewentry;
+//   "tweet_id": "1925230696055840924",
+//   "url": "https://twitter.com/RookieXBT/status/1925230696055840924", 
+//   "text": "Just bought some coins, hope they moon!",
+//   "username": "RookieXBT",
+//   "expected_is_shilling": false,
+//   "created_at": "2025-08-27T16:30:00Z"
+// Message representing a Twitter profile.
+message DummyTweet {
+  string id = 1;              // Unique identifier for the Twitter profile.
+  string user_id = 2;         // The user ID from Twitter.
+  string handle = 3;          // Twitter handle.
+  string tweet_url = 4;      // URL for the tweet.
+  string text = 5;           // Text content of the tweet.
+  string created_at = 6;     // Creation timestamp of the tweet.
+}
+
+
+// Request 
+message GetDummyTweets {
+  int32 count = 1;  // Number of dummy tweets to retrieve.
+}
+
+// Response
+message GetDummyTweetsResponse {
+  repeated DummyTweet tweets = 1;  // List of dummy tweets.
+}
+
+service ReviewEntryService {
+  // Retrieves a selection of dummy tweets.
+  rpc FetchDummyTweets(GetDummyTweets) returns (GetDummyTweetsResponse);
+}

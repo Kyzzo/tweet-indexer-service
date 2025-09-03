@@ -49,6 +49,7 @@ type TweetEventRepository interface {
 	FindUniqueUsersSince(ctx context.Context, since time.Time) (int64, error)
 	CountGrokVsNonGrok(ctx context.Context, since time.Time) (grokCount, nonGrokCount int64, err error)
 	FindLatestTweetsForUsers(ctx context.Context, userIds []string) ([]latestTweet, error)
+	FindAllFalseGrok(ctx context.Context, limit int64) ([]model.TweetEvent, error)
 }
 type mongoEventRepository struct {
 	conn    *mongodb.MongoConnection
@@ -235,6 +236,45 @@ func (repo *mongoEventRepository) FindAllNoneGrok(ctx context.Context) ([]model.
 	}
 	return misses, nil
 }
+func (repo *mongoEventRepository) FindAllFalseGrok(ctx context.Context, limit int64) ([]model.TweetEvent, error) {
+
+	pipeline := mongo.Pipeline{
+		// stage 1
+		bson.D{{
+			Key: "$match",
+			Value: bson.D{
+				{Key: "tweet_type", Value: bson.D{
+					{Key: "$nin", Value: bson.A(noneGrokBson)}, // Convert slice to bson.A
+				}},
+			},
+		}},
+		// stage 2
+		{{Key: "$lookup", Value: bson.D{
+			{"from", grokIndexCollection},
+			{"localField", "tweet_id"},
+			{"foreignField", "_id"},
+			{"as", "grokMatch"},
+		}}},
+		// stage 3
+		{{Key: "$match", Value: bson.D{{"grokMatch.is_shill", false}}}},
+		// optional
+		{{"$sort", bson.D{{"created_at", -1}}}},
+		{{Key: "$project", Value: bson.D{{"grokMatch", 0}}}},
+	}
+	// Add limit stage to the aggregation pipeline
+	pipeline = append(pipeline, bson.D{{"$limit", limit}})
+
+	cur, err := repo.conn.Datastore.Collection(tweetIndexCollection).Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	var misses []model.TweetEvent
+	if err := cur.All(ctx, &misses); err != nil {
+		return nil, err
+	}
+	return misses, nil
+}
+
 func (repo *mongoEventRepository) FindAllNoneTokenGrok(ctx context.Context) ([]model.TweetEvent, error) {
 	pipeline := mongo.Pipeline{
 		// stage 1
