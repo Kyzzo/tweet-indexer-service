@@ -11,12 +11,15 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/dummyaccount"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/controller"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/controller/indexergrpchandler"
+	"github.com/jeetdotso/tweet-indexer-service/indexer/controller/reviewgrpchandler"
 	sched "github.com/jeetdotso/tweet-indexer-service/indexer/scheduler"
 	"github.com/jeetdotso/tweet-indexer-service/indexer/service"
 	"github.com/jeetdotso/tweet-indexer-service/logg"
 	"github.com/jeetdotso/tweet-indexer-service/persistence/mongodb"
+	"github.com/jeetdotso/tweet-indexer-service/proto/grpcreviewentry"
 	"github.com/jeetdotso/tweet-indexer-service/proto/grpcsaasentry"
 	"github.com/jeetdotso/tweet-indexer-service/scheduler"
+	"github.com/jeetdotso/tweet-indexer-service/shared"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 	"github.com/robfig/cron"
 	"github.com/rs/zerolog/log"
@@ -35,7 +38,7 @@ func main() {
 	ctx := context.Background()
 
 	dummSvc := dummyaccount.NewSeleniumService(&conn, cfg)
-	var tagsToRun []twitterprofile.TagType = []twitterprofile.TagType{twitterprofile.TAG_TRADER}
+	var tagsToRun []twitterprofile.TagType = shared.RUNNING_TAGS_TYPE
 	dummSvc.ResetAll(ctx)
 	//Register Scrapes
 	_, saasIdx := registerScrapes(ctx, *cfg, &conn, grpcconn, tagsToRun)
@@ -151,6 +154,10 @@ func registerGrpcServer(cfg *config.Config, conn *mongodb.MongoConnection, grpcc
 	// Register Saas Entry GRPC
 	saasEntryCtrl := indexergrpchandler.NewSaasGRPCHandler(cfg, conn, dummSvc)
 	grpcsaasentry.RegisterSaasEntryServiceServer(grpcsrv, saasEntryCtrl)
+
+	//Register Review Entry GRPC
+	reviewEntryCtrl := reviewgrpchandler.NewReviewGRPCHandler(cfg, conn)
+	grpcreviewentry.RegisterReviewEntryServiceServer(grpcsrv, reviewEntryCtrl)
 
 	reflection.Register(grpcsrv)
 
