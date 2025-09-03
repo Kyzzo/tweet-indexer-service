@@ -273,7 +273,7 @@ func (h *SaasGRPCHandler) GetRawTweetEvent(ctx context.Context, req *grpcsaasent
 }
 
 func (h *SaasGRPCHandler) GetTrackedProfiles(ctx context.Context, req *grpcsaasentry.EmptyRequest) (*grpcsaasentry.TopProfileResponse, error) {
-	profiles, err := h.twtSvc.GetTopHitRaw(ctx, shared.MAX_ACCOUNTS_RUN, []string{twitterprofile.TAG_TRADER.String()})
+	profiles, err := h.twtSvc.GetTopHitRaw(ctx, int64(shared.MAX_ACCOUNTS_RUN*len(shared.RUNNING_TAGS)), shared.RUNNING_TAGS)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error retrieving tracked profiles.")
 		return nil, err

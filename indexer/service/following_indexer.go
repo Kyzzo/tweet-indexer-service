@@ -419,6 +419,10 @@ func (f *FollowingIndexer) GetByUsernameAndAdd(ctx context.Context, username, ta
 		rTag = twitterprofile.TAG_MEME.String()
 	case "influencer":
 		rTag = twitterprofile.TAG_INFLUENCER.String()
+	case "company":
+		rTag = twitterprofile.TAG_COMPANY.String()
+	case "other":
+		rTag = twitterprofile.TAG_OTHER.String()
 	default:
 		rTag = twitterprofile.TAG_TRADER.String()
 	}

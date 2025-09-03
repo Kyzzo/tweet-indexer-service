@@ -98,7 +98,7 @@ func (c *ProfileUpdaterImpl) RunFetchedProfileUpdater(ctx context.Context) {
 			ctx,
 			time.Now().Add(-23*time.Hour),
 			shared.MAX_ACCOUNTS_RUN,
-			[]string{twitterprofile.TAG_TRADER.String()},
+			shared.RUNNING_TAGS,
 		)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).
