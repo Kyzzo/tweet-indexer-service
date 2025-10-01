@@ -26,6 +26,7 @@ type Repository interface {
 	UpdateAllToGroup(ctx context.Context, group int) error
 	AcquireNextByGroup(ctx context.Context, group int) (*SelAccount, error)
 	AcquireNextGrokByGroup(ctx context.Context, group int) (*SelAccount, error)
+	ReleaseGrok(ctx context.Context, username string) error
 }
 type MongoRepository struct {
 	conn    *mongodb.MongoConnection
@@ -261,5 +262,25 @@ func (repo *MongoRepository) UpdateAllToGroup(ctx context.Context, group int) er
 		return err
 	}
 
+	return nil
+}
+
+func (r *MongoRepository) ReleaseGrok(ctx context.Context, username string) error {
+	res, err := r.conn.Datastore.Collection(r.absrepo.Collection).UpdateOne(
+		ctx,
+		bson.M{"username": username, "in_grok_use": true}, // only if actually in use
+		bson.M{
+			"$set":         bson.M{"in_grok_use": false},
+			"$currentDate": bson.M{"updated_at": true},
+		},
+		// Consider enabling retryable writes at client level
+	)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		// Optional: not an error, but useful to know (double release / wrong username)
+		logg.Log.Warn().Str("username", username).Msg("ReleaseGrok: no matching in-use account")
+	}
 	return nil
 }

@@ -207,27 +207,7 @@ func (s *ServiceDefaultImpl) LogOut(ctx context.Context, userName string) error 
 	return nil
 }
 func (s *ServiceDefaultImpl) LogGrokOut(ctx context.Context, userName string) error {
-
-	//get in use first
-
-	sl, err := s.repo.FindById(ctx, userName)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error finding next selenium account.")
-		return err
-	}
-	if sl == nil {
-		return errEmptyAccount
-	}
-
-	sl.InGrokUse = false
-	sl.UpdatedAt = time.Now()
-	sl.LastGrok = time.Now()
-	err = s.repo.UpdateOrInsert(ctx, sl)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating selenium account.")
-		return err
-	}
-	return nil
+	return s.repo.ReleaseGrok(ctx, userName)
 }
 
 func (svc *ServiceDefaultImpl) FindGroups(ctx context.Context) (int, error) {
