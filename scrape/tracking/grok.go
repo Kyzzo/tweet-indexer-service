@@ -57,7 +57,16 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("url", gm.twitterAPI.BaseURL).Str("proxy", px).Msg("Error creating Grok conversation.")
 		return
 	}
-	logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", gm.ss.UserName).Dur("time taken", time.Since(startTime)).Msg("Created Grok conversation.")
+	duration := time.Since(startTime)
+	minutes := int(duration.Minutes())
+	seconds := int(duration.Seconds()) % 60
+	logg.Log.Info().
+		Caller().
+		Ctx(ctx).
+		Str("tweetID", tweet.ID).
+		Str("SelAcct", gm.ss.UserName).
+		Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).
+		Msg("Created Grok conversation.")
 
 	// Step 4: Send the actual Grok prompt
 	const maxPromptRetries = 2
@@ -98,6 +107,9 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	}
 
 	if err2 != nil {
+		duration := time.Since(startTime)
+		minutes := int(duration.Minutes())
+		seconds := int(duration.Seconds()) % 60
 		logg.Log.
 			Error().
 			Caller().
@@ -105,7 +117,7 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 			Err(err2).
 			Str("tweetID", tweet.ID).
 			Str("SelAcct", gm.ss.UserName).
-			Dur("time taken", time.Since(startTime)).
+			Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).
 			Msg("Failed to send Grok prompt initial after retries")
 		return
 	}
@@ -131,7 +143,10 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 		ConvoID:      convId,
 	}
 	handleResponse(ctx, &gr)
-	logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", gm.ss.UserName).Dur("time taken", time.Since(startTime)).Msg("Completed Grok Response.")
+	duration = time.Since(startTime)
+	minutes = int(duration.Minutes())
+	seconds = int(duration.Seconds()) % 60
+	logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", gm.ss.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Completed Grok Response.")
 
 }
 func (gm *GrokMonitor) GetProfileResponse(ctx context.Context, prfId string, profileName string, handleResponse func(ctx context.Context, id string, tag string)) {
@@ -231,12 +246,19 @@ func (gm *GrokMonitor) ProcessResponse(ctx context.Context, key, tokenRec, grokI
 			ConvoID:      grokId,
 		}
 		handleResponse(ctx, gr)
-		logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", gm.ss.UserName).Dur("time taken", time.Since(startTime)).Msg("Completed Grok Response.")
+
+		duration := time.Since(startTime)
+		minutes := int(duration.Minutes())
+		seconds := int(duration.Seconds()) % 60
+		logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", gm.ss.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Completed Grok Response.")
 		return ""
 
 	}
 
-	logg.Log.Error().Caller().Ctx(ctx).Dur("time taken", time.Since(startTime)).Msg("Max retries reached. Grok response not available.")
+	duration := time.Since(startTime)
+	minutes := int(duration.Minutes())
+	seconds := int(duration.Seconds()) % 60
+	logg.Log.Error().Caller().Ctx(ctx).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Max retries reached. Grok response not available.")
 	return ""
 }
 func (gm *GrokMonitor) ProcessProfileResponse(ctx context.Context, grokId string, prfId string, profileName string, px string, handleResponse func(ctx context.Context, id string, tag string)) string {
@@ -272,8 +294,11 @@ func (gm *GrokMonitor) ProcessProfileResponse(ctx context.Context, grokId string
 		return ""
 
 	}
+	duration := time.Since(startTime)
+	minutes := int(duration.Minutes())
+	seconds := int(duration.Seconds()) % 60
 
-	logg.Log.Error().Caller().Ctx(ctx).Dur("time taken", time.Since(startTime)).Msg("Max retries reached. Grok response not available.")
+	logg.Log.Error().Caller().Ctx(ctx).Str("SellAcct", gm.ss.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Max retries reached. Grok response not available.")
 	return ""
 }
 
@@ -324,7 +349,10 @@ func GetGrokCheck(ctx context.Context, tweet *model.TweetEvent, svc dummyaccount
 
 	// Start monitoring tweets
 	monitor.GetResponse(ctx, tweet, handleResponse)
-	logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", selAccount.UserName).Dur("time taken", time.Since(startTime)).Msg("Completed Grok check for tweet.")
+	duration := time.Since(startTime)
+	minutes := int(duration.Minutes())
+	seconds := int(duration.Seconds()) % 60
+	logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", selAccount.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Completed Grok check for tweet.")
 
 }
 func GetGrokProfile(ctx context.Context, prfID, prfUsername string, svc dummyaccount.Service, url string, handleResponse func(ctx context.Context, id string, tag string)) {
