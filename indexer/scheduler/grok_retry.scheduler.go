@@ -29,7 +29,7 @@ type GrokRetyImpl struct {
 }
 
 const (
-	SCHEDULER_THREADS = 30
+	SCHEDULER_THREADS = 20
 )
 
 func NewGrokRetryScheduler(cfg *config.Config, conn *mongodb.MongoConnection, dummySvc dummyaccount.Service, saasIdx service.SaasIndexer) scheduler.Scheduler {
@@ -49,7 +49,7 @@ func NewGrokRetryScheduler(cfg *config.Config, conn *mongodb.MongoConnection, du
 
 func (s *GrokRetyImpl) Execute() {
 	ctx := context.Background()
-	lock, err := s.locker.Obtain(ctx, GrokRetryKey, 5*time.Minute, &redislock.Options{
+	lock, err := s.locker.Obtain(ctx, GrokRetryKey, 10*time.Minute, &redislock.Options{
 		// give it up to half a second to get the lock
 		RetryStrategy: redislock.LimitRetry(redislock.LinearBackoff(50*time.Millisecond), 10),
 	})
