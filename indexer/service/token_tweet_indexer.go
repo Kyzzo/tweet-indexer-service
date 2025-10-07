@@ -295,7 +295,7 @@ func (ti TokenTweetIndexer) HandleTweetEvent(ctx context.Context, tagType twitte
 	default:
 		tweetEvent.Category = model.CategoryTypeTRADER
 	}
-	go ti.streamTweet(ctx, *tweetEvent, tweet.FullInterface)
+	ti.streamTweet(ctx, *tweetEvent, tweet.FullInterface)
 
 }
 
