@@ -93,6 +93,10 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	}
 
 	resp, _, err2 = gm.twitterAPI.SendMessage(ctx, msgToSend, convId, "grok-3-latest", px, false)
+	duration = time.Since(startTime)
+	minutes = int(duration.Minutes())
+	seconds = int(duration.Seconds()) % 60
+	logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", gm.ss.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Completed sending Grok message.")
 	promV := gjson.Parse(resp).Get(key)
 	if resp == "" || !promV.Exists() {
 		//retry by geting convo history
@@ -258,7 +262,7 @@ func (gm *GrokMonitor) ProcessResponse(ctx context.Context, key, tokenRec, grokI
 	duration := time.Since(startTime)
 	minutes := int(duration.Minutes())
 	seconds := int(duration.Seconds()) % 60
-	logg.Log.Error().Caller().Ctx(ctx).Str("SelAcct", gm.ss.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Max retries reached. Grok response not available.")
+	logg.Log.Error().Caller().Ctx(ctx).Str("SelAcct", gm.ss.UserName).Str("tweetID", tweet.ID).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Max retries reached. Grok response not available.")
 	return ""
 }
 func (gm *GrokMonitor) ProcessProfileResponse(ctx context.Context, grokId string, prfId string, profileName string, px string, handleResponse func(ctx context.Context, id string, tag string)) string {
@@ -298,7 +302,7 @@ func (gm *GrokMonitor) ProcessProfileResponse(ctx context.Context, grokId string
 	minutes := int(duration.Minutes())
 	seconds := int(duration.Seconds()) % 60
 
-	logg.Log.Error().Caller().Ctx(ctx).Str("SellAcct", gm.ss.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Max retries reached. Grok response not available.")
+	logg.Log.Error().Caller().Ctx(ctx).Str("SelAcct", gm.ss.UserName).Str("profile_id", prfId).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Max retries reached. Grok Profile response not available.")
 	return ""
 }
 
@@ -343,9 +347,16 @@ func GetGrokCheck(ctx context.Context, tweet *model.TweetEvent, svc dummyaccount
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to get account monitor.")
 		return
 	}
-	defer func() {
-		_ = svc.LogGrokOut(ctx, selAccount.UserName)
-	}()
+	// ensure we always attempt logout, regardless of ctx timeout/cancel
+	if selAccount != nil {
+		defer func(user string) {
+			logoutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := svc.LogGrokOut(logoutCtx, user); err != nil {
+				logg.Log.Error().Err(err).Str("SelAcct", user).Msg("LogGrokOut failed")
+			}
+		}(selAccount.UserName)
+	}
 
 	// Start monitoring tweets
 	monitor.GetResponse(ctx, tweet, handleResponse)
@@ -363,9 +374,15 @@ func GetGrokProfile(ctx context.Context, prfID, prfUsername string, svc dummyacc
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to get account monitor.")
 		return
 	}
-	defer func() {
-		_ = svc.LogGrokOut(ctx, selAccount.UserName)
-	}()
+	if selAccount != nil {
+		defer func(user string) {
+			logoutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := svc.LogGrokOut(logoutCtx, user); err != nil {
+				logg.Log.Error().Err(err).Str("SelAcct", user).Msg("LogGrokOut failed")
+			}
+		}(selAccount.UserName)
+	}
 
 	// Start monitoring tweets
 	monitor.GetProfileResponse(ctx, prfID, prfUsername, handleResponse)
