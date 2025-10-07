@@ -29,6 +29,7 @@ const (
 	TOPIC_NAME   = "monitor"
 	LIVE_KEY     = "live"     // used to indicate live scraping in the topic
 	ROLLBACK_KEY = "rollback" // used to indicate rollback scraping in the topic
+	GROK_WORKERS = 8          // how many concurrent grok checks
 )
 
 type TokenTweetIndexer struct {
@@ -38,9 +39,14 @@ type TokenTweetIndexer struct {
 	dummSvc        dummyaccount.Service
 	rawTweetRepo   repository.RawTweetRepository
 	grokSvc        GrokIndexer
+	// --- grok pool ---
+	grokJobs       chan model.TweetEvent
+	grokWG         sync.WaitGroup
+	grokOnce       sync.Once
+	grokPoolCancel context.CancelFunc
 }
 
-func NewTokenTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap, sassIndx SaasIndexer) TokenTweetIndexer {
+func NewTokenTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpcconn *grpcclient.GrpcClientMap, sassIndx SaasIndexer) *TokenTweetIndexer {
 	tweetRepo := repository.NewTweetIndexRepo(conn)
 	checkpointRepo := repository.NewUserCheckPointRepository(conn)
 	ftPrf := twitterprofile.NewRepository(conn)
@@ -48,7 +54,7 @@ func NewTokenTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpc
 	grokSvc := NewGrokIndexer(cfg, conn, dummSvc, sassIndx)
 	rawTweetRepo := repository.NewRawTweetRepo(conn)
 
-	return TokenTweetIndexer{
+	ti := TokenTweetIndexer{
 		tweetRepo:      tweetRepo,
 		checkpointRepo: checkpointRepo,
 		rawTweetRepo:   rawTweetRepo,
@@ -56,13 +62,23 @@ func NewTokenTweetIndexer(cfg config.Config, conn *mongodb.MongoConnection, grpc
 		ftPrf:          ftPrf,
 		grokSvc:        grokSvc,
 	}
+
+	return &ti
 }
 
 var trackedUsers = make(map[string]twitterprofile.TwitterProfile) // Keeps track of monitored users
 func (ti *TokenTweetIndexer) Start(ctx context.Context, tag twitterprofile.TagType) {
 	logg.Log.Info().Caller().Ctx(ctx).Msg("Starting tweet indexer service...")
+	ti.initGrokPool() // << start 8 workers in this pod
 
 	for {
+		select {
+		case <-ctx.Done():
+			logg.Log.Info().Caller().Msg("tweet indexer: context canceled; stopping loop")
+			return
+		default:
+		}
+
 		startTime := time.Now()
 
 		podName := os.Getenv("POD_NAME") // e.g. "tweet-indexer-service-headless-1"
@@ -102,11 +118,17 @@ func (ti *TokenTweetIndexer) Start(ctx context.Context, tag twitterprofile.TagTy
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error syncing tweets.")
 			continue
 		}
-
-		logg.Log.Info().Caller().Ctx(ctx).Msgf("---------------------\nCycle completed in %s\n----------------", time.Since(startTime))
-		if time.Since(startTime) < 60*time.Second {
-			logg.Log.Info().Caller().Ctx(ctx).Msgf("Sleeping for %s", 10*time.Second)
-			time.Sleep(10 * time.Second)
+		elapsed := time.Since(startTime)
+		logg.Log.Info().Caller().Ctx(ctx).Msgf("---------------------\nCycle completed in %s\n----------------", elapsed)
+		if elapsed < 60*time.Second {
+			sleep := 10 * time.Second
+			logg.Log.Info().Caller().Ctx(ctx).Dur("sleep", sleep).Msg("Sleeping before next cycle")
+			select {
+			case <-time.After(sleep):
+			case <-ctx.Done():
+				logg.Log.Info().Caller().Msg("tweet indexer: wake early due to shutdown")
+				return
+			}
 		}
 
 	}
@@ -335,8 +357,8 @@ func (ti TokenTweetIndexer) streamTweet(ctx context.Context, tweetEvent model.Tw
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to save raw tweet event.")
 	}
-
-	go ti.grokSvc.Start(ctx, &tweetEvent, nil)
+	ti.enqueueGrok(tweetEvent)
+	// go ti.grokSvc.Start(ctx, &tweetEvent, nil)
 
 }
 func (ti TokenTweetIndexer) streamRollbackTweet(ctx context.Context, tweetEvent model.TweetEvent) {
@@ -346,4 +368,49 @@ func (ti TokenTweetIndexer) streamRollbackTweet(ctx context.Context, tweetEvent 
 		return
 	}
 
+}
+
+func (ti *TokenTweetIndexer) initGrokPool() {
+	ti.grokOnce.Do(func() {
+		pctx, cancel := context.WithCancel(context.Background())
+		ti.grokPoolCancel = cancel
+		ti.grokJobs = make(chan model.TweetEvent, GROK_WORKERS*2) // small buffer
+
+		// spin up fixed workers
+		for i := 0; i < GROK_WORKERS; i++ {
+			ti.grokWG.Add(1)
+			go func() {
+				defer ti.grokWG.Done()
+				for ev := range ti.grokJobs {
+					// independent per-task timeout
+					taskCtx, cancelTask := context.WithTimeout(pctx, 60*time.Second)
+					done := make(chan struct{})
+
+					ti.grokSvc.Start(taskCtx, &ev, done)
+
+					select {
+					case <-done: // completed normally
+					case <-taskCtx.Done(): // timeout/canceled
+						// optional: log or mark transient failure
+					}
+					cancelTask()
+				}
+			}()
+		}
+	})
+}
+
+func (ti *TokenTweetIndexer) enqueueGrok(ev model.TweetEvent) {
+	// blocks if all workers busy + buffer full = natural backpressure
+	ti.grokJobs <- ev
+}
+
+func (ti *TokenTweetIndexer) StopGrokPool() {
+	if ti.grokPoolCancel != nil {
+		ti.grokPoolCancel()
+	}
+	if ti.grokJobs != nil {
+		close(ti.grokJobs)
+	}
+	ti.grokWG.Wait()
 }
