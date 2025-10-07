@@ -383,7 +383,7 @@ func (ti *TokenTweetIndexer) initGrokPool() {
 				defer ti.grokWG.Done()
 				for ev := range ti.grokJobs {
 					// independent per-task timeout
-					taskCtx, cancelTask := context.WithTimeout(pctx, 60*time.Second)
+					taskCtx, cancelTask := context.WithTimeout(pctx, 2*time.Minute)
 					done := make(chan struct{})
 
 					ti.grokSvc.Start(taskCtx, &ev, done)

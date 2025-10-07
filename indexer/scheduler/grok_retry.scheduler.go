@@ -121,7 +121,7 @@ func (s *GrokRetyImpl) Execute() {
 			defer wg.Done()
 			for twt := range jobs {
 				// independent per-task timeout; NOT tied to heartbeat/lock
-				taskCtx, cancelTask := context.WithTimeout(context.Background(), 2*time.Minute)
+				taskCtx, cancelTask := context.WithTimeout(context.Background(), 4*time.Minute)
 				done := make(chan struct{})
 				s.svc.Start(taskCtx, &twt, done)
 				select {
