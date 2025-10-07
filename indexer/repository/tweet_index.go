@@ -45,7 +45,9 @@ type TweetEventRepository interface {
 	FindAllNoneGrok(ctx context.Context) ([]model.TweetEvent, error)
 	FindAllNoneTokenGrok(ctx context.Context) ([]model.TweetEvent, error)
 	FindAvgScrapeTime(ctx context.Context, since time.Time) (float64, error)
+	FindHourlyAvgScrapeTime(ctx context.Context, since time.Time) ([]HourlyAvg, error)
 	FindAvgGrokTime(ctx context.Context, since time.Time) (float64, error)
+	FindHourlyAvgGrokTime(ctx context.Context, since time.Time) ([]HourlyAvg, error)
 	FindUniqueUsersSince(ctx context.Context, since time.Time) (int64, error)
 	CountGrokVsNonGrok(ctx context.Context, since time.Time) (grokCount, nonGrokCount int64, err error)
 	FindLatestTweetsForUsers(ctx context.Context, userIds []string) ([]latestTweet, error)
@@ -419,6 +421,147 @@ func (repo *mongoEventRepository) FindAvgGrokTime(ctx context.Context, since tim
 	}
 	// no matching docs → zero
 	return 0, nil
+}
+
+type HourlyAvg struct {
+	Hour       time.Time `bson:"hour" json:"hour"`
+	AvgSeconds float64   `bson:"avgSeconds" json:"avg_seconds"`
+	Count      int64     `bson:"count" json:"count"`
+}
+
+func (repo *mongoEventRepository) FindHourlyAvgScrapeTime(
+	ctx context.Context,
+	since time.Time,
+) ([]HourlyAvg, error) {
+	coll := repo.conn.Datastore.Collection(tweetIndexCollection)
+
+	pipeline := mongo.Pipeline{
+		// 1) Only docs since 'since'
+		{{Key: "$match", Value: bson.D{
+			{Key: "created_at", Value: bson.D{{Key: "$gte", Value: primitive.NewDateTimeFromTime(since)}}},
+		}}},
+		// 2) Compute diff in ms (captured_at - created_at)
+		{{Key: "$project", Value: bson.D{
+			{Key: "created_at", Value: 1},
+			{Key: "diffMs", Value: bson.D{{Key: "$subtract", Value: bson.A{"$captured_at", "$created_at"}}}},
+		}}},
+		// (Optional) drop negatives caused by clock skew
+		{{Key: "$match", Value: bson.D{{Key: "diffMs", Value: bson.D{{Key: "$gte", Value: 0}}}}}},
+		// 3) Truncate created_at to the hour (MongoDB 5+)
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "hour", Value: bson.D{
+				{Key: "$dateTrunc", Value: bson.D{
+					{Key: "date", Value: "$created_at"},
+					{Key: "unit", Value: "hour"},
+					// Optional timezone if you want local hours:
+					// {Key: "timezone", Value: "America/Detroit"},
+				}},
+			}},
+		}}},
+		// 4) Group per hour and average
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$hour"},
+			{Key: "avgMs", Value: bson.D{{Key: "$avg", Value: "$diffMs"}}},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+		}}},
+		// 5) Final shape
+		{{Key: "$project", Value: bson.D{
+			{Key: "_id", Value: 0},
+			{Key: "hour", Value: "$_id"},
+			{Key: "avgSeconds", Value: bson.D{{Key: "$divide", Value: bson.A{"$avgMs", 1000}}}},
+			{Key: "count", Value: 1},
+		}}},
+		// 6) Sort ascending
+		{{Key: "$sort", Value: bson.D{{Key: "hour", Value: 1}}}},
+	}
+
+	opts := options.Aggregate().SetAllowDiskUse(true).SetMaxTime(30 * time.Second)
+	cur, err := coll.Aggregate(ctx, pipeline, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	var out []HourlyAvg
+	if err := cur.All(ctx, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (repo *mongoEventRepository) FindHourlyAvgGrokTime(
+	ctx context.Context,
+	since time.Time,
+) ([]HourlyAvg, error) {
+	tweets := repo.conn.Datastore.Collection(tweetIndexCollection)
+
+	pipeline := mongo.Pipeline{
+		// 1) Only tweets captured since "since"
+		{{Key: "$match", Value: bson.D{
+			{Key: "captured_at", Value: bson.D{{Key: "$gte", Value: primitive.NewDateTimeFromTime(since)}}},
+		}}},
+		// 2) Join grok.indexes by _id
+		{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: grokIndexCollection},
+			{Key: "localField", Value: "_id"},
+			{Key: "foreignField", Value: "_id"},
+			{Key: "as", Value: "grok_data"},
+		}}},
+		// 3) Unwind (drop docs without grok_data)
+		{{Key: "$unwind", Value: bson.D{
+			{Key: "path", Value: "$grok_data"},
+			{Key: "preserveNullAndEmptyArrays", Value: false},
+		}}},
+		// 4) Compute diff and truncate captured_at to hour
+		{{Key: "$project", Value: bson.D{
+			{Key: "diffMs", Value: bson.D{{Key: "$subtract", Value: bson.A{"$grok_data.created_at", "$captured_at"}}}},
+			{Key: "captured_at", Value: 1},
+		}}},
+		// 4.1) Drop weird negatives (clock skew etc.), optional
+		{{Key: "$match", Value: bson.D{
+			{Key: "diffMs", Value: bson.D{{Key: "$gte", Value: 0}}},
+		}}},
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "hour", Value: bson.D{
+				{Key: "$dateTrunc", Value: bson.D{
+					{Key: "date", Value: "$captured_at"},
+					{Key: "unit", Value: "hour"},
+					// optionally: {Key: "timezone", Value: "America/Detroit"},
+				}},
+			}},
+		}}},
+		// 5) Group by hour
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$hour"},
+			{Key: "avgMs", Value: bson.D{{Key: "$avg", Value: "$diffMs"}}},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+		}}},
+		// 6) Final shape
+		{{Key: "$project", Value: bson.D{
+			{Key: "_id", Value: 0},
+			{Key: "hour", Value: "$_id"},
+			{Key: "avgSeconds", Value: bson.D{{Key: "$divide", Value: bson.A{"$avgMs", 1000}}}},
+			{Key: "count", Value: 1},
+		}}},
+		// 7) Sort ascending by hour
+		{{Key: "$sort", Value: bson.D{{Key: "hour", Value: 1}}}},
+	}
+
+	opts := options.Aggregate().
+		SetAllowDiskUse(true).
+		SetMaxTime(30 * time.Second)
+
+	cur, err := tweets.Aggregate(ctx, pipeline, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	var out []HourlyAvg
+	if err := cur.All(ctx, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (repo *mongoEventRepository) FindUniqueUsersSince(ctx context.Context, since time.Time) (int64, error) {
