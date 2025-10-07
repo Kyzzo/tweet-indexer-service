@@ -391,7 +391,7 @@ func (f *FollowingIndexer) HandleGrokProfile(ctx context.Context, id string, tag
 }
 
 func (f *FollowingIndexer) GetEmptyTagsAndRunGrok(ctx context.Context) error {
-	// Get all profiles with empty tags
+	// 1) fetch inputs (honor ctx)
 	profiles, err := f.twtPrf.GetAllByTag(ctx, "")
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to find profiles with empty tags.")
@@ -401,19 +401,64 @@ func (f *FollowingIndexer) GetEmptyTagsAndRunGrok(ctx context.Context) error {
 		logg.Log.Info().Caller().Ctx(ctx).Msg("No profiles with empty tags found, skipping.")
 		return nil
 	}
-	sem := make(chan struct{}, SINGLE_PAGE_WORKER_COUNT)
-	for _, profile := range profiles {
-		sem <- struct{}{}
-		ctu := util.CreateBackgroundContextFromExisting(ctx)
-		go func(p *twitterprofile.FetchedProfile) {
-			defer func() { <-sem }()
-			f.RunGrokOnPrf(ctu, p.ID, p.UserName)
-		}(profile)
+
+	// 2) worker pool
+	jobs := make(chan *twitterprofile.FetchedProfile, SINGLE_PAGE_WORKER_COUNT)
+	var wg sync.WaitGroup
+
+	for i := 0; i < SINGLE_PAGE_WORKER_COUNT/2; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for p := range jobs {
+				// per-profile timeout (independent so we can drain gracefully)
+				taskCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+
+				f.RunGrokOnPrf(taskCtx, p.ID, p.UserName)
+
+				// decide how it ended
+				select {
+				case <-taskCtx.Done():
+					switch taskCtx.Err() {
+					case context.DeadlineExceeded:
+						logg.Log.Warn().
+							Int("worker", workerID).
+							Str("user", p.UserName).
+							Str("userID", p.ID).
+							Msg("Grok profile timed out")
+					case context.Canceled:
+						logg.Log.Warn().
+							Int("worker", workerID).
+							Str("user", p.UserName).
+							Str("userID", p.ID).
+							Msg("Grok profile canceled")
+					default:
+						logg.Log.Warn().
+							Int("worker", workerID).
+							Str("user", p.UserName).
+							Str("userID", p.ID).
+							Err(taskCtx.Err()).
+							Msg("Grok profile stopped due to context error")
+					}
+				}
+				cancel()
+			}
+		}(i)
 	}
-	// Wait for all goroutines to finish
-	for i := 0; i < cap(sem); i++ {
-		sem <- struct{}{}
+
+	// 3) enqueue (stop if parent ctx is canceled)
+	for _, p := range profiles {
+		select {
+		case <-ctx.Done():
+			logg.Log.Warn().Msg("shutdown/canceled - stop enqueueing profiles")
+			close(jobs)
+			wg.Wait()
+			return ctx.Err()
+		case jobs <- p:
+		}
 	}
+	close(jobs)
+	wg.Wait()
 	return nil
 }
 
