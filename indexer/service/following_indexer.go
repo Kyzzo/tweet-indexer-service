@@ -2,9 +2,15 @@ package service
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
+	"os"
 	"runtime/debug"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jeetdotso/tweet-indexer-service/config"
@@ -30,6 +36,7 @@ type FollowingIndexer struct {
 	twtPrf         twitterprofile.Repository
 	prfSvc         Profile
 	dummSvc        dummyaccount.Service
+	handleCounts   sync.Map // map[string]*atomic.Int64
 	follRepo       repository.FollowingRepository
 	URL            string // URL for the grok service, can be set in config
 	followProducer stream.Producer
@@ -47,8 +54,8 @@ const (
 	SINGLE_PAGE_MAX_RETRIES   = 3
 	SINGLE_PAGE_RETRY_DELAY   = 3 * time.Second
 
-	FOLLOWING_WORKER_COUNT  = 20
-	FOLLOWING_HANDLER_COUNT = 40
+	FOLLOWING_WORKER_COUNT  = 30
+	FOLLOWING_HANDLER_COUNT = 30
 	FOLLOWING_MAX_RETRIES   = 3
 	FOLLOWING_RETRY_DELAY   = 3 * time.Second
 
@@ -72,9 +79,60 @@ func NewFollowingIndexer(cfg config.Config, conn *mongodb.MongoConnection, dummy
 		dummSvc:        dummySvc,
 		twtPrf:         twtPrf,
 		prfSvc:         prfSvc,
+		handleCounts:   sync.Map{}, // map[string]*atomic.Int64
 		URL:            cfg.Services.GrokAPIServices.Host,
 		followProducer: follPro,
 	}
+}
+
+func (f *FollowingIndexer) ExportCountsCSV(ctx context.Context, filePath string) error {
+	fmt.Println("MAKING CSV")
+	snap := f.CountsSnapshot()
+
+	// 2) Sort by count desc, then handle asc for stable output
+	type row struct {
+		handle string
+		count  int64
+	}
+	rows := make([]row, 0, len(snap))
+	for h, c := range snap {
+		rows = append(rows, row{handle: h, count: c})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].count == rows[j].count {
+			return rows[i].handle < rows[j].handle
+		}
+		return rows[i].count > rows[j].count
+	})
+
+	// 3) Create file + CSV writer
+	fh, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("create csv: %w", err)
+	}
+	defer fh.Close()
+
+	w := csv.NewWriter(fh)
+	defer w.Flush()
+
+	// 4) Header
+	if err := w.Write([]string{"handle", "link", "count"}); err != nil {
+		return fmt.Errorf("write header: %w", err)
+	}
+
+	// 5) Rows
+	for _, r := range rows {
+		link := fmt.Sprintf("https://x.com/%s", r.handle) // handle already normalized (no '@')
+		if err := w.Write([]string{r.handle, link, strconv.FormatInt(r.count, 10)}); err != nil {
+			return fmt.Errorf("write row %q: %w", r.handle, err)
+		}
+	}
+
+	// 6) Check for any buffered write error
+	if err := w.Error(); err != nil {
+		return fmt.Errorf("flush csv: %w", err)
+	}
+	return nil
 }
 
 func (f *FollowingIndexer) TopicNames() []string {
@@ -101,6 +159,25 @@ func (f *FollowingIndexer) ScrapeFollowingList(ctx context.Context) error {
 	}
 	ctl := util.CreateBackgroundContextFromExisting(ctx)
 	go f.streamAllFollowings(ctl) // Stream all followings after processing
+	return nil
+}
+
+func (f *FollowingIndexer) ScrapeFollowers(ctx context.Context, userIds []string) error {
+	if len(userIds) == 0 {
+		logg.Log.Info().Caller().Ctx(ctx).Msg("No unique user IDs found, skipping.")
+		return nil
+	}
+	//turn into mapping
+	userIdMap := make(map[string]struct{})
+	for _, id := range userIds {
+		userIdMap[id] = struct{}{}
+	}
+
+	tracking.MonitorFollowersPipeline(ctx, userIdMap, min(FOLLOWING_WORKER_COUNT, len(userIdMap)), min(FOLLOWING_HANDLER_COUNT, len(userIdMap)), FOLLOWING_MAX_RETRIES, FOLLOWING_RETRY_DELAY, f.HandleFollowers, f.dummSvc)
+	if err := f.ExportCountsCSV(ctx, "handles_counts.csv"); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("export counts csv failed")
+	}
+
 	return nil
 }
 
@@ -163,6 +240,34 @@ func (f *FollowingIndexer) HandleFollowing(ctx context.Context, followedByID str
 	}
 }
 
+func (f *FollowingIndexer) HandleFollowers(ctx context.Context, followedByID string, user twitterTypes.FollowingUser) {
+	//add to mutex mapping
+	if user.Handle == "" {
+		return
+	}
+	if !user.Verified || user.Followers < 25 || user.Following < 25 || user.DMPermission == false {
+		return
+	}
+
+	follow := model.NewFollowing(followedByID, user.ID)
+	if err := f.follRepo.UpdateOrInsertFollower(ctx, follow); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to upsert following.")
+		return
+	}
+	// Fast concurrent increment:
+	if err := f.twtPrf.UpsertFetchedProfileFollowers(ctx, user); err != nil {
+		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to upsert twitter profile.")
+		return
+	}
+}
+func (f *FollowingIndexer) CountsSnapshot() map[string]int64 {
+	out := make(map[string]int64)
+	f.handleCounts.Range(func(k, v any) bool {
+		out[k.(string)] = v.(*atomic.Int64).Load()
+		return true
+	})
+	return out
+}
 func (f *FollowingIndexer) ScrapeFollowingListByIdForAdmin(ctx context.Context, userId string) {
 	if userId == "" {
 		logg.Log.Warn().Caller().Ctx(ctx).Msg("User ID is empty, skipping.")
