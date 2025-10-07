@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -398,20 +399,24 @@ func (ti *TokenTweetIndexer) initGrokPool() {
 					select {
 					case <-done: // completed normally
 						endAt = time.Now()
+						queueWait := sentAt.Sub(job.EnqAt)
+						svcTime := endAt.Sub(sentAt)
 						logg.Log.Info().
 							Int("worker", workerID).
 							Str("tweetID", job.Ev.ID).
-							Dur("queue_wait", sentAt.Sub(job.EnqAt)).
-							Dur("svc_time", endAt.Sub(sentAt)).
+							Str("queue_wait", formatDuration(queueWait)).
+							Str("svc_time", formatDuration(svcTime)).
 							Msg("grok task ok")
 					case <-taskCtx.Done(): // timeout/canceled
 						endAt = time.Now()
 						err := taskCtx.Err()
+						queueWait := sentAt.Sub(job.EnqAt)
+						svcTime := endAt.Sub(sentAt)
 						l := logg.Log.Warn().
 							Int("worker", workerID).
 							Str("tweetID", job.Ev.ID).
-							Dur("queue_wait", sentAt.Sub(job.EnqAt)).
-							Dur("svc_time", endAt.Sub(sentAt))
+							Str("queue_wait", formatDuration(queueWait)).
+							Str("svc_time", formatDuration(svcTime))
 						switch {
 						case errors.Is(err, context.DeadlineExceeded):
 							l.Msg("grok task timed out (2m deadline exceeded)")
@@ -441,4 +446,14 @@ func (ti *TokenTweetIndexer) StopGrokPool() {
 		close(ti.grokJobs)
 	}
 	ti.grokWG.Wait()
+}
+
+func formatDuration(d time.Duration) string {
+	seconds := int(d.Seconds())
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	minutes := seconds / 60
+	secs := seconds % 60
+	return fmt.Sprintf("%dm%ds", minutes, secs)
 }
