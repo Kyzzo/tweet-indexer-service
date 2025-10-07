@@ -52,7 +52,7 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	startTime := time.Now()
 	// Step 1: Create a new Grok conversation
 	px := proxy.NextProxy()
-	convId, err := gm.twitterAPI.CreateConversation(px)
+	convId, err := gm.twitterAPI.CreateConversation(ctx, px)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("url", gm.twitterAPI.BaseURL).Str("proxy", px).Msg("Error creating Grok conversation.")
 		return
@@ -92,12 +92,12 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 		tokenRec = "tokensMentioned"
 	}
 
-	resp, _, err2 = gm.twitterAPI.SendMessage(msgToSend, convId, "grok-3-latest", px, false)
+	resp, _, err2 = gm.twitterAPI.SendMessage(ctx, msgToSend, convId, "grok-3-latest", px, false)
 	promV := gjson.Parse(resp).Get(key)
 	if resp == "" || !promV.Exists() {
 		//retry by geting convo history
 		for attempt := 1; attempt <= maxPromptRetries; attempt++ {
-			resp, err2 = gm.twitterAPI.GetConversationHistory(convId, px)
+			resp, err2 = gm.twitterAPI.GetConversationHistory(ctx, convId, px)
 			if resp != "" {
 				break
 			}
@@ -152,7 +152,7 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 func (gm *GrokMonitor) GetProfileResponse(ctx context.Context, prfId string, profileName string, handleResponse func(ctx context.Context, id string, tag string)) {
 	// Step 1: Create a new Grok conversation
 	px := proxy.NextProxy()
-	convId, err := gm.twitterAPI.CreateConversation(px)
+	convId, err := gm.twitterAPI.CreateConversation(ctx, px)
 	if err != nil {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Str("url", gm.twitterAPI.BaseURL).Str("proxy", px).Msg("Error creating Grok conversation.")
 		return
@@ -166,12 +166,12 @@ func (gm *GrokMonitor) GetProfileResponse(ctx context.Context, prfId string, pro
 	)
 
 	// TODO: change to intial
-	resp, _, err2 = gm.twitterAPI.SendMessage(getProfileMsg(profileName), convId, "grok-3-latest", px, false)
+	resp, _, err2 = gm.twitterAPI.SendMessage(ctx, getProfileMsg(profileName), convId, "grok-3-latest", px, false)
 	promV := gjson.Parse(resp).Get("isCategorized")
 	if resp == "" || !promV.Exists() {
 		//retry by geting convo history
 		for attempt := 1; attempt <= maxPromptRetries; attempt++ {
-			resp, err2 = gm.twitterAPI.GetConversationHistory(convId, px)
+			resp, err2 = gm.twitterAPI.GetConversationHistory(ctx, convId, px)
 			if resp != "" {
 				break
 			}
@@ -214,7 +214,7 @@ func (gm *GrokMonitor) ProcessResponse(ctx context.Context, key, tokenRec, grokI
 	}()
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 
-		resp, err := gm.twitterAPI.GetConversationHistory(grokId, px)
+		resp, err := gm.twitterAPI.GetConversationHistory(ctx, grokId, px)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Attempt %d: Error fetching Grok response.", attempt)
 			time.Sleep(retryDelay)
@@ -258,7 +258,7 @@ func (gm *GrokMonitor) ProcessResponse(ctx context.Context, key, tokenRec, grokI
 	duration := time.Since(startTime)
 	minutes := int(duration.Minutes())
 	seconds := int(duration.Seconds()) % 60
-	logg.Log.Error().Caller().Ctx(ctx).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Max retries reached. Grok response not available.")
+	logg.Log.Error().Caller().Ctx(ctx).Str("SelAcct", gm.ss.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Max retries reached. Grok response not available.")
 	return ""
 }
 func (gm *GrokMonitor) ProcessProfileResponse(ctx context.Context, grokId string, prfId string, profileName string, px string, handleResponse func(ctx context.Context, id string, tag string)) string {
@@ -273,7 +273,7 @@ func (gm *GrokMonitor) ProcessProfileResponse(ctx context.Context, grokId string
 	}()
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 
-		resp, err := gm.twitterAPI.GetConversationHistory(grokId, px)
+		resp, err := gm.twitterAPI.GetConversationHistory(ctx, grokId, px)
 		if err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msgf("Attempt %d: Error fetching Grok response.", attempt)
 			time.Sleep(retryDelay)
@@ -355,6 +355,7 @@ func GetGrokCheck(ctx context.Context, tweet *model.TweetEvent, svc dummyaccount
 	logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", selAccount.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Completed Grok check for tweet.")
 
 }
+
 func GetGrokProfile(ctx context.Context, prfID, prfUsername string, svc dummyaccount.Service, url string, handleResponse func(ctx context.Context, id string, tag string)) {
 	// Fetch a Selenium account
 	monitor, selAccount, err := NewGrokMonitor(ctx, svc, url)
