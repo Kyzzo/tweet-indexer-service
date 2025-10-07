@@ -56,5 +56,5 @@ func (s *ProfileAnalysisImpl) Execute() {
 }
 
 func (c *ProfileAnalysisImpl) Expression() string {
-	return "@every 30m"
+	return "@daily"
 }
