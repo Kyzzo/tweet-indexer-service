@@ -33,6 +33,10 @@ const (
 	GROK_WORKERS = 8          // how many concurrent grok checks
 )
 
+type grokJob struct {
+	Ev    model.TweetEvent
+	EnqAt time.Time
+}
 type TokenTweetIndexer struct {
 	tweetRepo      repository.TweetEventRepository
 	ftPrf          twitterprofile.Repository
@@ -41,7 +45,7 @@ type TokenTweetIndexer struct {
 	rawTweetRepo   repository.RawTweetRepository
 	grokSvc        GrokIndexer
 	// --- grok pool ---
-	grokJobs       chan model.TweetEvent
+	grokJobs       chan grokJob
 	grokWG         sync.WaitGroup
 	grokOnce       sync.Once
 	grokPoolCancel context.CancelFunc
@@ -375,43 +379,58 @@ func (ti *TokenTweetIndexer) initGrokPool() {
 	ti.grokOnce.Do(func() {
 		pctx, cancel := context.WithCancel(context.Background())
 		ti.grokPoolCancel = cancel
-		ti.grokJobs = make(chan model.TweetEvent, GROK_WORKERS*2) // small buffer
+		ti.grokJobs = make(chan grokJob, GROK_WORKERS*2) // small buffer
 
-		// spin up fixed workers
 		for i := 0; i < GROK_WORKERS; i++ {
 			ti.grokWG.Add(1)
-			go func() {
+			go func(workerID int) {
 				defer ti.grokWG.Done()
-				for ev := range ti.grokJobs {
+				for job := range ti.grokJobs {
 					// independent per-task timeout
 					taskCtx, cancelTask := context.WithTimeout(pctx, 2*time.Minute)
 					done := make(chan struct{})
 
-					ti.grokSvc.Start(taskCtx, &ev, done)
+					// timings
+					sentAt := time.Now() // when worker starts processing
+					ti.grokSvc.Start(taskCtx, &job.Ev, done)
 
+					var endAt time.Time
 					select {
 					case <-done: // completed normally
+						endAt = time.Now()
+						logg.Log.Info().
+							Int("worker", workerID).
+							Str("tweetID", job.Ev.ID).
+							Dur("queue_wait", sentAt.Sub(job.EnqAt)).
+							Dur("svc_time", endAt.Sub(sentAt)).
+							Msg("grok task ok")
 					case <-taskCtx.Done(): // timeout/canceled
-						// This tells you *why* the context ended
+						endAt = time.Now()
 						err := taskCtx.Err()
-						if errors.Is(err, context.DeadlineExceeded) {
-							logg.Log.Warn().Str("tweetID", ev.ID).Msg("Grok task timed out (2m deadline exceeded)")
-						} else if errors.Is(err, context.Canceled) {
-							logg.Log.Warn().Str("tweetID", ev.ID).Msg("Grok task was canceled (pool shut down)")
-						} else {
-							logg.Log.Warn().Str("tweetID", ev.ID).Err(err).Msg("Grok task stopped due to context error")
+						l := logg.Log.Warn().
+							Int("worker", workerID).
+							Str("tweetID", job.Ev.ID).
+							Dur("queue_wait", sentAt.Sub(job.EnqAt)).
+							Dur("svc_time", endAt.Sub(sentAt))
+						switch {
+						case errors.Is(err, context.DeadlineExceeded):
+							l.Msg("grok task timed out (2m deadline exceeded)")
+						case errors.Is(err, context.Canceled):
+							l.Msg("grok task was canceled (pool shut down)")
+						default:
+							l.Err(err).Msg("grok task ended by context error")
 						}
 					}
 					cancelTask()
 				}
-			}()
+			}(i)
 		}
 	})
 }
 
 func (ti *TokenTweetIndexer) enqueueGrok(ev model.TweetEvent) {
-	// blocks if all workers busy + buffer full = natural backpressure
-	ti.grokJobs <- ev
+	// blocking send = natural backpressure
+	ti.grokJobs <- grokJob{Ev: ev, EnqAt: time.Now()}
 }
 
 func (ti *TokenTweetIndexer) StopGrokPool() {
