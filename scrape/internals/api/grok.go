@@ -2,11 +2,14 @@ package twitterAPI
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"time"
 
 	"github.com/tidwall/gjson"
 )
@@ -18,12 +21,29 @@ type GrokClient struct {
 	HTTPClient *http.Client
 }
 
+var grokHTTP = &http.Client{
+	Timeout: 60 * time.Second, // whole-request watchdog
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		MaxIdleConns:          200,
+		MaxConnsPerHost:       100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     true,
+		DialContext: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+	},
+}
+
 func NewGrokClient(authToken, ct0, baseUrl string) *GrokClient {
 	return &GrokClient{
 		BaseURL:    baseUrl,
 		AuthToken:  authToken,
 		Ct0:        ct0,
-		HTTPClient: &http.Client{},
+		HTTPClient: grokHTTP, // reuse tuned client
 	}
 }
 
@@ -59,7 +79,7 @@ type Response struct {
 }
 
 // CreateConversation creates a new conversation (Not required to start conv)
-func (c *GrokClient) CreateConversation(proxy string) (string, error) {
+func (c *GrokClient) CreateConversation(ctx context.Context, proxy string) (string, error) {
 	reqBody := struct {
 		AuthToken string `json:"auth_token"`
 		Ct0       string `json:"ct0"`
@@ -70,7 +90,7 @@ func (c *GrokClient) CreateConversation(proxy string) (string, error) {
 		Proxy:     proxy,
 	}
 
-	body, err := c.doRequest("POST", "/grok/create_conversation", reqBody)
+	body, err := c.doRequest(ctx, "POST", "/grok/create_conversation", reqBody)
 	if err != nil {
 		return "", err
 	}
@@ -95,7 +115,7 @@ func (c *GrokClient) CreateConversation(proxy string) (string, error) {
 }
 
 // SendMessage sends a message to Grok (you can use this request only and get the response in one go)
-func (c *GrokClient) SendMessage(message, conversationID, model, proxy string, rawResponse bool) (string, string, error) {
+func (c *GrokClient) SendMessage(ctx context.Context, message, conversationID, model, proxy string, rawResponse bool) (string, string, error) {
 	reqBody := struct {
 		AuthToken      string `json:"auth_token"`
 		Ct0            string `json:"ct0"`
@@ -114,7 +134,7 @@ func (c *GrokClient) SendMessage(message, conversationID, model, proxy string, r
 		RawResponse:    rawResponse,
 	}
 
-	body, err := c.doRequest("POST", "/grok/send_message", reqBody)
+	body, err := c.doRequest(ctx, "POST", "/grok/send_message", reqBody)
 	if err != nil {
 		return "", "", err
 	}
@@ -131,7 +151,7 @@ func (c *GrokClient) SendMessage(message, conversationID, model, proxy string, r
 }
 
 // GetConversationHistory retrieves the message history for a conversation (this is not requirede or needed just added it, maybe for further use)
-func (c *GrokClient) GetConversationHistory(conversationID, proxy string) (string, error) {
+func (c *GrokClient) GetConversationHistory(ctx context.Context, conversationID, proxy string) (string, error) {
 	url := fmt.Sprintf("%s/grok/conversation_history?auth_token=%s&ct0=%s&conversation_id=%s",
 		c.BaseURL, c.AuthToken, c.Ct0, conversationID)
 	if proxy != "" {
@@ -185,7 +205,7 @@ func (c *GrokClient) GenerateTransactionID(method, path, proxy string) (string, 
 }
 
 // doRequest is a helper method to perform HTTP requests
-func (c *GrokClient) doRequest(method, path string, requestBody interface{}) ([]byte, error) {
+func (c *GrokClient) doRequest(ctx context.Context, method, path string, requestBody interface{}) ([]byte, error) {
 	var body io.Reader
 	if requestBody != nil {
 		jsonData, err := json.Marshal(requestBody)
@@ -195,7 +215,7 @@ func (c *GrokClient) doRequest(method, path string, requestBody interface{}) ([]
 		body = bytes.NewBuffer(jsonData)
 	}
 
-	req, err := http.NewRequest(method, c.BaseURL+path, body)
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
