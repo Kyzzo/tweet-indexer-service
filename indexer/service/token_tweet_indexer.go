@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"strconv"
@@ -391,7 +392,15 @@ func (ti *TokenTweetIndexer) initGrokPool() {
 					select {
 					case <-done: // completed normally
 					case <-taskCtx.Done(): // timeout/canceled
-						// optional: log or mark transient failure
+						// This tells you *why* the context ended
+						err := taskCtx.Err()
+						if errors.Is(err, context.DeadlineExceeded) {
+							logg.Log.Warn().Str("tweetID", ev.ID).Msg("Grok task timed out (2m deadline exceeded)")
+						} else if errors.Is(err, context.Canceled) {
+							logg.Log.Warn().Str("tweetID", ev.ID).Msg("Grok task was canceled (pool shut down)")
+						} else {
+							logg.Log.Warn().Str("tweetID", ev.ID).Err(err).Msg("Grok task stopped due to context error")
+						}
 					}
 					cancelTask()
 				}
