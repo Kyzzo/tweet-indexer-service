@@ -403,7 +403,7 @@ func (ti *TokenTweetIndexer) initGrokPool() {
 						svcTime := endAt.Sub(sentAt)
 						logg.Log.Info().
 							Int("worker", workerID).
-							Str("tweetID", job.Ev.ID).
+							Str("tweetID", job.Ev.TweetID).
 							Str("queue_wait", formatDuration(queueWait)).
 							Str("svc_time", formatDuration(svcTime)).
 							Msg("grok task ok")
@@ -414,7 +414,7 @@ func (ti *TokenTweetIndexer) initGrokPool() {
 						svcTime := endAt.Sub(sentAt)
 						l := logg.Log.Warn().
 							Int("worker", workerID).
-							Str("tweetID", job.Ev.ID).
+							Str("tweetID", job.Ev.TweetID).
 							Str("queue_wait", formatDuration(queueWait)).
 							Str("svc_time", formatDuration(svcTime))
 						switch {
