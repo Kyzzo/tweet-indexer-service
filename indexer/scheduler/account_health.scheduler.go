@@ -82,6 +82,7 @@ func (s *HealthCheck) Execute() {
 		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error updating or inserting health cycle.")
 		return
 	}
+	s.dummySvc.ResetAll(ctx)
 }
 
 func (c *HealthCheck) Expression() string {
