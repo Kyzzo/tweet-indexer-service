@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"runtime/debug"
 
 	"github.com/jeetdotso/tweet-indexer-service/config"
@@ -16,11 +15,13 @@ import (
 )
 
 type SaasIndexer struct {
-	grokRepo       repository.GrokEventRepository
-	tweetRepo      repository.TweetEventRepository
-	memeProducer   stream.Producer
-	traderProducer stream.Producer
-	rawRepo        repository.RawTweetRepository
+	grokRepo                repository.GrokEventRepository
+	tweetRepo               repository.TweetEventRepository
+	memeProducer            stream.Producer
+	traderProducer          stream.Producer
+	rawRepo                 repository.RawTweetRepository
+	REVIEW_TOPIC_CON_MEME   string
+	REVIEW_TOPIC_CON_TRADER string
 }
 
 const (
@@ -28,29 +29,26 @@ const (
 	TRADER_TOPIC_NAME = "trader"
 )
 
-var (
-	REVIEW_TOPIC_CON_MEME   = fmt.Sprintf("%s.%s", stream.StreamTweetPrefixTopic, MEME_TOPIC_NAME)
-	REVIEW_TOPIC_CON_TRADER = fmt.Sprintf("%s.%s", stream.StreamTweetPrefixTopic, TRADER_TOPIC_NAME)
-)
-
 func NewSaasIndexer(cfg config.Config, conn *mongodb.MongoConnection) SaasIndexer {
 	grokRepo := repository.NewGrokIndexRepo(conn)
 	tweetRepo := repository.NewTweetIndexRepo(conn)
 	rawRepo := repository.NewRawTweetRepo(conn)
 
-	memeProducer := kafka.NewProducer(cfg.Stream, REVIEW_TOPIC_CON_MEME)
-	traderProducer := kafka.NewProducer(cfg.Stream, REVIEW_TOPIC_CON_TRADER)
+	memeProducer := kafka.NewProducer(cfg.Stream, cfg.Stream.Kafka.MemeTopic)
+	traderProducer := kafka.NewProducer(cfg.Stream, cfg.Stream.Kafka.TraderTopic)
 	return SaasIndexer{
-		grokRepo:       grokRepo,
-		tweetRepo:      tweetRepo,
-		memeProducer:   memeProducer,
-		traderProducer: traderProducer,
-		rawRepo:        rawRepo,
+		grokRepo:                grokRepo,
+		tweetRepo:               tweetRepo,
+		memeProducer:            memeProducer,
+		traderProducer:          traderProducer,
+		rawRepo:                 rawRepo,
+		REVIEW_TOPIC_CON_MEME:   cfg.Stream.Kafka.MemeTopic,
+		REVIEW_TOPIC_CON_TRADER: cfg.Stream.Kafka.TraderTopic,
 	}
 }
 
 func (si *SaasIndexer) TopicNames() []string {
-	return []string{REVIEW_TOPIC_CON_MEME, REVIEW_TOPIC_CON_TRADER}
+	return []string{si.REVIEW_TOPIC_CON_MEME, si.REVIEW_TOPIC_CON_TRADER}
 }
 
 func (si *SaasIndexer) Start(ctx context.Context, grokEvent *model.GrokEvent) {
@@ -137,14 +135,14 @@ func (si *SaasIndexer) streamTweet(ctx context.Context, saasEvt model.SaasEvent)
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
 			return
 		}
-		logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", saasEvt.ID).Str("topic", REVIEW_TOPIC_CON_MEME).Msg("Saas Tweet event sent!")
+		logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", saasEvt.ID).Str("topic", si.REVIEW_TOPIC_CON_MEME).Msg("Saas Tweet event sent!")
 	case model.CategoryTypeTRADER:
 		// Produce message to Kafka
 		if err = si.traderProducer.Produce([]byte(LIVE_KEY), b); err != nil {
 			logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Failed to produce stream message.")
 			return
 		}
-		logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", saasEvt.ID).Str("topic", REVIEW_TOPIC_CON_TRADER).Msg("Saas Tweet event sent!")
+		logg.Log.Info().Caller().Ctx(ctx).Str("tweetId", saasEvt.ID).Str("topic", si.REVIEW_TOPIC_CON_TRADER).Msg("Saas Tweet event sent!")
 	default:
 		return
 

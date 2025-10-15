@@ -60,23 +60,23 @@ jobs:
           kubectl get nodes
           kubectl get ns
 
-#      - name: Deploy to staging k8s
-#        uses: WyriHaximus/github-action-helm3@v3
-#        if: ${{ steps.vars.outputs.branch == env.STAGING_BRANCH }}
-#        with:
-#          exec: >
-#            helm upgrade ${{ env.IMAGE_NAME }}-release
-#            --set image=${{ vars.DO_CONTAINER_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-staging
-#            --set env=staging
-#            --set host=jkbapi.staging.jeet.so
-#            --set mongo_uri='${{ secrets.MONGO_URI_STAGING }}'
-#            --set redis_password='${{ secrets.REDIS_PASSWORD_STAGING }}'
-#            --set twitter_token='${{ secrets.TWITTER_TOKEN_STAGING }}'
-#            --set s3_key='${{ secrets.S3_KEY_STAGING }}'
-#            --set s3_secret='${{ secrets.S3_SECRET_STAGING }}'
-#            --set gateway='istio-ingress/istio-gateway'
-#            .helm --install --namespace=default
-#          kubeconfig: ${{ secrets.KUBECONFIG_STAGING }}
+      - name: Deploy to staging k8s
+        uses: WyriHaximus/github-action-helm3@v3
+        if: ${{ steps.vars.outputs.branch == env.STAGING_BRANCH }}
+        with:
+         exec: >
+           helm upgrade ${{ env.IMAGE_NAME }}-release
+           --set image=${{ vars.DO_CONTAINER_REGISTRY_HOST }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-staging
+           --set env=staging
+           --set host=dealswap4.com
+           --set mongo_uri='${{ secrets.MONGO_URI_STAGING }}'
+           --set redis_password='${{ secrets.REDIS_PASSWORD_STAGING }}'
+           --set twitter_token='${{ secrets.TWITTER_TOKEN_PRODUCTION }}'
+           --set s3_key='${{ secrets.S3_KEY_STAGING }}'
+           --set s3_secret='${{ secrets.S3_SECRET_STAGING }}'
+           --set gateway='istio-ingress/istio-gateway'
+           .helm --install --namespace=default
+         kubeconfig: ${{ secrets.KUBECONFIG_STAGING }}
 
       - name: Deploy to production k8s
         uses: WyriHaximus/github-action-helm3@v3

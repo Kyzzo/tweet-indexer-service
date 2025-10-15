@@ -1,19 +1,29 @@
 app: tweet-indexer-service
+
 stream:
- kafka:
-   brokers: kafka.jeet3.com:9092
+  kafka:
+    brokers:
+      - kafka-jkb-do-user-15967845-0.k.db.ondigitalocean.com:25062
+    usePrivate: false
+    useSASL:    false
+    userName: "doadmin"
+    password: "AVNS_vuJo18PP38Pqp8B4UKC"
+    traderTopic: "jeet.stream.tweet.staging.trader"
+    memeTopic:   "jeet.stream.tweet.staging.shill"
+    followingTopic: "jeet.stream.followings.staging.followers"
+
 memory:
   redis:
-    url: redis-staging-data-cluster-do-user-13859356-0.b.db.ondigitalocean.com
+    url: private-db-caching-nyc3-44311-do-user-15967845-0.i.db.ondigitalocean.com
     user: default
     password:
     port: 25061
     tls: true
 persistence:
   s3:
-    bucket: static.jeet.cx
-    endpoint: https://fra1.digitaloceanspaces.com
-    cdnEndpoint: https://static.jeet.cx
+    bucket: dealswap
+    endpoint: https://dealswap.nyc3.digitaloceanspaces.com
+    cdnEndpoint: https://dealswap.nyc3.cdn.digitaloceanspaces.com
     forcePathStyle: true
   mongodb:
     url: mongodb://localhost:27017

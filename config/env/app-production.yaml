@@ -8,6 +8,9 @@ stream:
     useSASL:    false
     userName: "doadmin"
     password: "AVNS_vuJo18PP38Pqp8B4UKC"
+    traderTopic: "jeet.stream.tweet.v2.trader"
+    memeTopic:   "jeet.stream.tweet.v2.shill"
+    followingTopic: "jeet.stream.followings.v1.followers"
 
 
 memory:
