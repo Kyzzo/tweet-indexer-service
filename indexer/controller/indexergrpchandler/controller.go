@@ -211,6 +211,7 @@ func (h *SaasGRPCHandler) GetFollowingFullList(ctx context.Context, req *grpcsaa
 			Followers:  int32(prf.Followers),
 			Following:  int32(prf.Following),
 			Verified:   prf.Verified,
+			Tag:        prf.Tag,
 		}
 	}
 	resp := &grpcsaasentry.FollowingFullListResponse{
@@ -247,6 +248,7 @@ func (h *SaasGRPCHandler) GetProfilesByIDs(ctx context.Context, req *grpcsaasent
 			Followers:  int32(prf.Followers),
 			Following:  int32(prf.Following),
 			Verified:   prf.Verified,
+			Tag:        prf.Tag,
 		}
 	}
 	resp := &grpcsaasentry.FollowingFullListResponse{
@@ -298,6 +300,7 @@ func (h *SaasGRPCHandler) GetTrackedProfiles(ctx context.Context, req *grpcsaase
 			Followers:  int32(prf.Followers),
 			Following:  int32(prf.Following),
 			Verified:   prf.Verified,
+			Tag:        prf.Tag,
 		}
 	}
 

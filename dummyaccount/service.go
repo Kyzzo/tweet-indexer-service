@@ -14,7 +14,6 @@ import (
 type Service interface {
 	NewAccount(ctx context.Context, username, password string, group int, from string) error
 	JustAddCookies(ctx context.Context, username string, cookies []selenium.Cookie) error
-	FindInUse(ctx context.Context, group int) (*SelAccount, error)
 	RemoveCookies(ctx context.Context, username string) error
 	FindGroups(ctx context.Context) (int, error)
 	LogInToNext(ctx context.Context) (*SelAccount, error)
@@ -65,19 +64,6 @@ func (s *ServiceDefaultImpl) Update2FaCode(ctx context.Context, username, code s
 		return err
 	}
 	return nil
-}
-
-func (s *ServiceDefaultImpl) FindInUse(ctx context.Context, group int) (*SelAccount, error) {
-	sl, err := s.repo.FindInUse(ctx, group)
-	if err != nil {
-		logg.Log.Error().Caller().Ctx(ctx).Err(err).Msg("Error getting in use.")
-		return nil, err
-	}
-	if sl == nil {
-		return nil, errEmptyAccount
-	}
-
-	return sl, nil
 }
 
 func (s *ServiceDefaultImpl) JustAddCookies(ctx context.Context, username string, cookies []selenium.Cookie) error {

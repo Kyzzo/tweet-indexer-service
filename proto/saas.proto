@@ -14,6 +14,7 @@ message Profile {
   int32 followers = 6;        // Number of followers.
   int32 following = 7;        // Number of accounts this user is following.
   bool verified = 8;          // Whether the account is verified.
+  string tag = 9;           // Tag associated with the profile.
 }
 
 
@@ -109,3 +110,4 @@ service SaasEntryService {
   rpc GetAllUserProfiles(EmptyRequest) returns (TopProfileResponse);
 
 }
+
