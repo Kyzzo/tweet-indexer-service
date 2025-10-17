@@ -7,6 +7,6 @@ const (
 )
 
 var (
-	RUNNING_TAGS      = []string{twitterprofile.TAG_TRADER.String()}
-	RUNNING_TAGS_TYPE = []twitterprofile.TagType{twitterprofile.TAG_TRADER}
+	RUNNING_TAGS      = []string{twitterprofile.TAG_TRADER.String(), twitterprofile.TAG_MEME.String()}
+	RUNNING_TAGS_TYPE = []twitterprofile.TagType{twitterprofile.TAG_TRADER, twitterprofile.TAG_MEME}
 )

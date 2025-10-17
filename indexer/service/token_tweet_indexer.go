@@ -27,11 +27,11 @@ import (
 )
 
 const (
-	MAX_THREADS  = 20
+	MAX_THREADS  = 15
 	TOPIC_NAME   = "monitor"
 	LIVE_KEY     = "live"     // used to indicate live scraping in the topic
 	ROLLBACK_KEY = "rollback" // used to indicate rollback scraping in the topic
-	GROK_WORKERS = 8          // how many concurrent grok checks
+	GROK_WORKERS = 6          // how many concurrent grok checks
 )
 
 type grokJob struct {
