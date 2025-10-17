@@ -23,7 +23,6 @@ import (
 	"github.com/jeetdotso/tweet-indexer-service/proto/grpcreviewentry"
 	"github.com/jeetdotso/tweet-indexer-service/proto/grpcsaasentry"
 	"github.com/jeetdotso/tweet-indexer-service/scheduler"
-	"github.com/jeetdotso/tweet-indexer-service/shared"
 	"github.com/jeetdotso/tweet-indexer-service/twitterprofile"
 	"github.com/robfig/cron"
 	"github.com/rs/zerolog/log"
@@ -48,7 +47,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	dummSvc := dummyaccount.NewSeleniumService(&conn, cfg)
-	var tagsToRun []twitterprofile.TagType = shared.RUNNING_TAGS_TYPE
+	var tagsToRun []twitterprofile.TagType = []twitterprofile.TagType{twitterprofile.TAG_TRADER}
 	dummSvc.ResetAll(rootCtx)
 	//Register Scrapes
 	_, tweetIndexer, saasIdx := registerScrapes(rootCtx, *cfg, &conn, grpcconn, tagsToRun)
