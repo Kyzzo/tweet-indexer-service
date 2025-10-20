@@ -23,7 +23,7 @@ type GrokMonitor struct {
 var (
 	// msgToSend = "Hello there"
 	profileMsg = "@%s \n\nWould you classify this profile as a Trader, Memecoin Speculator, Influencer, Company, or None?Respond with only one. Output in raw text strictly adhere to the following schema {\"isCategorized\"}"
-	memeMsg    = "%s\n\nFor a memecoin token trader, there are two types of shilling: hard shilling and soft shilling. Hard shilling involves the author explicitly mentioning one or more specific memecoins (by name, ticker, or contract address). A hard shill also includes one of the following: 1.  The author of the tweet states that they purchased the memecoin(s) or has a position in said memecoin(s) 2.  The author is explicitly bullish about the memecoin's past price performance 3.  The author is explicitly bullish about the memecoin's future price appreciation potential 4.  The author of the tweet posts the contract address of the memecoin(s) Soft shilling is a subtle or indirect form of promoting a memecoin — usually without making it look like an obvious advertisement or endorsement. A soft shill includes one of the following: 1.  Speaks positively about the project’s technology 2.  Posts a chart image of the memecoin(s) 3.  Includes subtle language about how the memecoin(s) could perform well, if various circumstances or factors align 4.  Posts artwork, imagery, or memes related to the memecoin(s) Important Clarification: •  A tweet must reference a specific, identifiable memecoin (via name, ticker, or contract address) to be classified as a shill. •  If the tweet uses generic, hypothetical, or non-specific phrases (e.g., “streamer coin,” “influencer token,” “dog coin”) that do not clearly refer to an existing memecoin, it should not be classified as a shill. Your job is to analyze the tweet and determine whether it is a shill or not. If yes, the tweet will be defined as a shill. If the tweet is a shill, specify whether it is Hard or Soft, and list the token(s) being referenced. If there is no specific token referenced, classify it as not a shill. Produce a response in raw text strictly adhering to the following schema:{\"isShill\": None, \"Hard\", \"Soft\", \"tokensMentioned\": list}"
+	memeMsg    = "%s\n\nFor a memecoin token trader, there are two types of shilling: hard shilling and soft shilling. Hard shilling involves the author explicitly mentioning one or more specific memecoins (by name, ticker, or contract address). A hard shill also includes one of the following: 1.  The author of the tweet states that they purchased the memecoin(s) or has a position in said memecoin(s) 2.  The author is explicitly bullish about the memecoin's past price performance 3.  The author is explicitly bullish about the memecoin's future price appreciation potential 4.  The author of the tweet posts the contract address of the memecoin(s) Soft shilling is a subtle or indirect form of promoting a memecoin — usually without making it look like an obvious advertisement or endorsement. A soft shill includes one of the following: 1.  Speaks positively about the project’s technology 2.  Posts a chart image of the memecoin(s) 3.  Includes subtle language about how the memecoin(s) could perform well, if various circumstances or factors align 4.  Posts artwork, imagery, or memes related to the memecoin(s) Important Clarification: •  A tweet must reference a specific, identifiable memecoin (via name, ticker, or contract address) to be classified as a shill. •  If the tweet uses generic, hypothetical, or non-specific phrases (e.g., “streamer coin,” “influencer token,” “dog coin”) that do not clearly refer to an existing memecoin, it should not be classified as a shill. Your job is to analyze the tweet and determine whether it is a shill or not. If yes, the tweet will be defined as a shill. If the tweet is a shill, specify whether it is Hard or Soft, and list the token(s) being referenced. If there is no specific token referenced, classify it as not a shill. Produce a response in raw text strictly adhering to the following schema:{\"isShill\": (None, \"Hard\", \"Soft\"), \"tokensMentioned\": list or null}"
 	traderMsg  = "%s\n\nFor a cryptocurrency trader, useful analysis typically involves commentary on any of these 6 factors: price movements, volume trends, technical indicators, onchain indicators, fundamental catalysts, or the mere presence of a price chart image. Your job is to analyze this tweet and determine whether any of the 6 criteria are being met. If so, the tweet will be defined as useful analysis.  If the tweet is being defined as useful analysis, we what to know what token ticker is being referenced. If there are multiple tokens being referenced, list them all. Produce a response in raw text strictly adhering to the following schema {\"isUsefulAnalysis\": bool,\"tokensMentioned\": list or null}"
 	msgToSend  = "Is this tweet explicitly promoting a specific cryptocurrency token(s)? If yes, I want to know what token(s) the author is promoting in the tweet. Do not look at data from the comments section to answer my question. Respond in this format:\n\nisPromoting: true| false \ntokensPromoted: tokens (separated by commas))"
 )
@@ -132,10 +132,14 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 		return
 	}
 	var gr *model.GrokEvent
-	if key == "isShill" {
+	switch tweet.Category {
+	case model.CategoryTypeMEME:
 		shillType := gjson.Parse(resp).Get(key).String()
 		shillType = strings.ReplaceAll(shillType, "\"", "")
 		trimmed := strings.ToLower(strings.TrimSpace(shillType))
+		if trimmed != "none" && trimmed != "hard" && trimmed != "soft" {
+			_ = gm.ProcessResponse(ctx, key, tokenRec, convId, tweet, px, handleResponse)
+		}
 		gr = &model.GrokEvent{
 			ID: tweet.TweetID,
 			IsShill: func() bool {
@@ -158,7 +162,7 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 		}
 		logg.Log.Info().Caller().Ctx(ctx).Str("shillType", shillType).Str("trimmed", trimmed).Msg("Parsed shill type.")
 
-	} else {
+	default:
 
 		gr = &model.GrokEvent{
 			ID:      tweet.TweetID,
@@ -172,6 +176,7 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 				return tokens
 			}(),
 			UserId:       tweet.UserID,
+			ShillType:    "N/A",
 			CreatedAt:    time.Now(),
 			DummyAccount: gm.ss.UserName,
 			ConvoID:      convId,
