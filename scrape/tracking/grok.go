@@ -254,6 +254,7 @@ func (gm *GrokMonitor) ProcessResponse(ctx context.Context, key, tokenRec, grokI
 				UserId:       tweet.UserID,
 				CreatedAt:    time.Now(),
 				DummyAccount: gm.ss.UserName,
+				Category:     model.CategoryTypeMEME,
 				ConvoID:      grokId,
 			}
 
