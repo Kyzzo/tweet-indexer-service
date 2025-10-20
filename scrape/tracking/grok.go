@@ -95,7 +95,7 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 	duration = time.Since(startTime)
 	minutes = int(duration.Minutes())
 	seconds = int(duration.Seconds()) % 60
-	logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Str("SelAcct", gm.ss.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Completed sending Grok message.")
+	logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Int("Category", int(tweet.Category)).Str("SelAcct", gm.ss.UserName).Str("time taken", fmt.Sprintf("%dm%ds", minutes, seconds)).Msg("Completed sending Grok message.")
 	promV := gjson.Parse(resp).Get(key)
 	if resp == "" || !promV.Exists() {
 		//retry by geting convo history
@@ -257,6 +257,7 @@ func (gm *GrokMonitor) ProcessResponse(ctx context.Context, key, tokenRec, grokI
 				Category:     model.CategoryTypeMEME,
 				ConvoID:      grokId,
 			}
+			logg.Log.Info().Caller().Ctx(ctx).Str("shillType", shillType).Str("trimmed", trimmed).Msg("Parsed shill type.")
 
 		} else {
 
