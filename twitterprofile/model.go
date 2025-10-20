@@ -55,7 +55,7 @@ type FetchedProfile struct {
 	Following  int       `bson:"following_count" json:"following_count"`
 	Verified   bool      `bson:"verified"        json:"verified"`
 	Tag        string    `bson:"tag"            json:"tag"`
-	Status     int       `bson:"status"         json:"status"` // 0: not tracked, 1: tracking, 2: not tracking
+	Status     int       `bson:"status"         json:"status"` // 0: new profile, 1: removed, 2: tracking added, 3: neutral
 	CapturedAt time.Time `bson:"captured_at"     json:"captured_at"`
 	UpdatedAt  time.Time `bson:"updated_at"      json:"updated_at"`
 }
