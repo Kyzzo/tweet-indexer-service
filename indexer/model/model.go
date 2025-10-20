@@ -79,6 +79,7 @@ type UserCheckPoint struct {
 type GrokEvent struct {
 	ID              string       `bson:"_id"`
 	IsShill         bool         `bson:"is_shill"`
+	ShillType       string       `bson:"shill_type"`
 	TokensMentioned []string     `bson:"tokens_mentioned"`
 	TokensShilled   []string     `bson:"tokens_shilled"`
 	UserId          string       `bson:"user_id"`
