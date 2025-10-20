@@ -85,10 +85,12 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 		msgToSend = memeMessage(tweet)
 		key = "isShill"
 		tokenRec = "tokensMentioned"
+		logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Msg("Sending Grok meme message.")
 	default:
 		msgToSend = traderMessage(tweet)
 		key = "isUsefulAnalysis"
 		tokenRec = "tokensMentioned"
+		logg.Log.Info().Caller().Ctx(ctx).Str("tweetID", tweet.ID).Msg("Sending Grok trader message.")
 	}
 
 	resp, _, err2 = gm.twitterAPI.SendMessage(ctx, msgToSend, convId, "grok-3-latest", px, false)
@@ -129,23 +131,53 @@ func (gm *GrokMonitor) GetResponse(ctx context.Context, tweet *model.TweetEvent,
 		_ = gm.ProcessResponse(ctx, key, tokenRec, convId, tweet, px, handleResponse)
 		return
 	}
-	gr := model.GrokEvent{
-		ID:      tweet.TweetID,
-		IsShill: gjson.Parse(resp).Get(key).Bool(),
-		TokensShilled: func() []string {
-			results := gjson.Parse(resp).Get(tokenRec).Array()
-			tokens := make([]string, len(results))
-			for i, result := range results {
-				tokens[i] = result.String()
-			}
-			return tokens
-		}(),
-		UserId:       tweet.UserID,
-		CreatedAt:    time.Now(),
-		DummyAccount: gm.ss.UserName,
-		ConvoID:      convId,
+	var gr *model.GrokEvent
+	if key == "isShill" {
+		shillType := gjson.Parse(resp).Get(key).String()
+		shillType = strings.ReplaceAll(shillType, "\"", "")
+		trimmed := strings.ToLower(strings.TrimSpace(shillType))
+		gr = &model.GrokEvent{
+			ID: tweet.TweetID,
+			IsShill: func() bool {
+				return trimmed == "hard" || trimmed == "soft"
+			}(),
+			ShillType: trimmed,
+			TokensShilled: func() []string {
+				results := gjson.Parse(resp).Get(tokenRec).Array()
+				tokens := make([]string, len(results))
+				for i, result := range results {
+					tokens[i] = result.String()
+				}
+				return tokens
+			}(),
+			UserId:       tweet.UserID,
+			CreatedAt:    time.Now(),
+			DummyAccount: gm.ss.UserName,
+			Category:     model.CategoryTypeMEME,
+			ConvoID:      convId,
+		}
+		logg.Log.Info().Caller().Ctx(ctx).Str("shillType", shillType).Str("trimmed", trimmed).Msg("Parsed shill type.")
+
+	} else {
+
+		gr = &model.GrokEvent{
+			ID:      tweet.TweetID,
+			IsShill: gjson.Parse(resp).Get(key).Bool(),
+			TokensShilled: func() []string {
+				results := gjson.Parse(resp).Get(tokenRec).Array()
+				tokens := make([]string, len(results))
+				for i, result := range results {
+					tokens[i] = result.String()
+				}
+				return tokens
+			}(),
+			UserId:       tweet.UserID,
+			CreatedAt:    time.Now(),
+			DummyAccount: gm.ss.UserName,
+			ConvoID:      convId,
+		}
 	}
-	handleResponse(ctx, &gr)
+	handleResponse(ctx, gr)
 	duration = time.Since(startTime)
 	minutes = int(duration.Minutes())
 	seconds = int(duration.Seconds()) % 60
