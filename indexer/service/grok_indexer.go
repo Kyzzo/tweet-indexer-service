@@ -65,9 +65,9 @@ func (gi *GrokIndexer) Start(ctx context.Context, tweet *model.TweetEvent, done 
 		return
 	}
 	if exist != nil {
-		// if !exist.IsShill {
-		// 	return
-		// }
+		if !exist.IsShill {
+			return
+		}
 		gi.saasSvc.StartTweet(ctx, exist, tweet)
 		return
 	}

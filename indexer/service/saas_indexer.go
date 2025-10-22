@@ -80,12 +80,11 @@ func (si *SaasIndexer) Start(ctx context.Context, grokEvent *model.GrokEvent) {
 }
 func (si *SaasIndexer) StartTweet(ctx context.Context, gr *model.GrokEvent, tweetEvent *model.TweetEvent) {
 	// Check if the user is already in the database
-	// TODO: if not shill skip later after testing period
 	var tokensShilled []string
 	if gr.IsShill {
 		tokensShilled = gr.TokensShilled
 	} else {
-		tokensShilled = []string{"NOT_SHILL"}
+		return
 	}
 	saasEvent := model.SaasEvent{
 		ID:            tweetEvent.ID,
